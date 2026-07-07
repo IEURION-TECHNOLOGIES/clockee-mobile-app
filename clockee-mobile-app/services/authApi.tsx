@@ -3,7 +3,7 @@ import axios from "axios";
 import { getToken, removeToken } from "../utils/token";
 
 const API = axios.create({
-  baseURL: "https://clockee-auth-qple.onrender.com",
+  baseURL: "https://clockee-backend-3.onrender.com",
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
