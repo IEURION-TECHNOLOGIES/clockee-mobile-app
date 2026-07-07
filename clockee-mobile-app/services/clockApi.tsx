@@ -3,7 +3,7 @@ import axios from "axios";
 import { getToken, removeToken } from "../utils/token";
 
 const API = axios.create({
-  baseURL: "https://clockee-clock-v2jx.onrender.com",
+  baseURL: "https://clock-service-1.onrender.com",
   timeout: 60000,
   headers: {
     "Content-Type": "application/json",
