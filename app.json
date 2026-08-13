@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Clockee",
+    "slug": "Clockee",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/clockee_logo.png",
+    "scheme": "Clockee",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+
+    "ios": {
+      "supportsTablet": true
+    },
+
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/clockee_logo.png",
+        "backgroundImage": "./assets/images/clockee_logo.png",
+        "monochromeImage": "./assets/images/clockee_logo.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/clockee_logo.png"
+    },
+
+    "plugins": [
+      "expo-router",
+
+      [
+        "expo-splash-screen",
+        {
+          "resizeMode": "contain",
+          "backgroundColor": "#071A36",
+          "dark": {
+            "backgroundColor": "#071A36"
+          }
+        }
+      ],
+
+      "expo-secure-store",
+      "expo-mail-composer",
+      "expo-font",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
+    ],
+
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
