@@ -3,222 +3,166 @@ import {
   useContext,
   useEffect,
   useState,
-  useRef,
 } from "react";
+import { router } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-  getProfile,
   loginUser,
-} from "@/services/authService";
+  getProfile,
+} from "../services/authService";
+
 import {
+  saveToken,
   getToken,
   removeToken,
-  saveToken,
 } from "@/utils/token";
 
-type AuthUser = any;
-
-type AuthContextType = {
-  user: AuthUser;
+interface AuthContextType {
+  user: any | null;
   loading: boolean;
   initialized: boolean;
+  isInitializing: boolean;
   login: (
     email: string,
     password: string,
     deviceInfo: string
   ) => Promise<any>;
   logout: () => Promise<void>;
-};
+}
 
-const AuthContext =
-  createContext<AuthContextType | null>(null);
+const AuthContext = createContext<
+  AuthContextType | null
+>(null);
 
-/* ================= RESPONSE HELPERS ================= */
+// Global flag: survives remounts and most Fast Refresh scenarios
+const GLOBAL_KEY = "__CLOCKEE_AUTH_INITIALIZED__";
 
-const extractUserData = (response: any) => {
-  if (!response?.data) {
-    console.warn(
-      "[Auth] Response has no data:",
-      response
-    );
-
-    return null;
+function hasInitializedInSession(): boolean {
+  if (typeof global !== "undefined") {
+    return !!((global as any)[GLOBAL_KEY]);
   }
+  return false;
+}
 
-  const extractedUser =
-    response.data.user ||
-    response.data.data?.user ||
-    response.data.data ||
-    response.data;
+function setInitializedInSession(): void {
+  if (typeof global !== "undefined") {
+    (global as any)[GLOBAL_KEY] = true;
+  }
+}
 
-  console.log(
-    "[Auth] Extracted user:",
-    {
-      userId:
-        extractedUser?.id ||
-        extractedUser?._id,
+export const AuthProvider = ({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
+  const [user, setUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-      branchId:
-        extractedUser?.branchId,
+  const queryClient = useQueryClient();
 
-      branchObjectId:
-        extractedUser?.branch?._id ||
-        extractedUser?.branch?.id,
-
-      name:
-        extractedUser?.name,
+  const extractUserData = (response: any) => {
+    if (!response?.data) {
+      return null;
     }
-  );
 
-  return extractedUser;
-};
-
-
-const formatUserData = (
-  userData: any,
-  session?: any
-) => {
-  if (!userData) {
-    return null;
-  }
-
-  const rawRoles = userData.role;
-
-  const roles = Array.isArray(rawRoles)
-    ? rawRoles
-    : rawRoles
-      ? [rawRoles]
-      : [];
-
-  let primaryRole = "staff";
-
-  if (roles.includes("super_admin")) {
-    primaryRole = "super_admin";
-  } else if (roles.includes("owner")) {
-    primaryRole = "owner";
-  } else if (roles.includes("admin")) {
-    primaryRole = "admin";
-  } else if (roles.includes("staff")) {
-    primaryRole = "staff";
-  }
-
-  const branchId =
-    userData.branchId ||
-    userData.branch?._id ||
-    userData.branch?.id ||
-    null;
-
-  const institutionId =
-    userData.institutionId ||
-    userData.institution?._id ||
-    userData.institution?.id ||
-    null;
-
-  const formattedUser = {
-    ...userData,
-
-    id:
-      userData.id ||
-      userData._id,
-
-    branchId,
-
-    institutionId,
-
-    roles,
-
-    role: primaryRole,
-
-    session:
-      session ||
-      userData.session ||
-      null,
+    return (
+      response.data.user ||
+      response.data.data ||
+      response.data
+    );
   };
 
-  console.log(
-    "[Auth] Formatted user:",
-    {
-      id: formattedUser.id,
-      branchId: formattedUser.branchId,
-      institutionId:
-        formattedUser.institutionId,
-      role: formattedUser.role,
-      roles: formattedUser.roles,
+  const formatUserData = (
+    userData: any,
+    session?: any
+  ) => {
+    if (!userData) {
+      return null;
     }
-  );
 
-  return formattedUser;
-};
+    const rawRoles = userData.role;
 
+    const roles = Array.isArray(rawRoles)
+      ? rawRoles
+      : rawRoles
+        ? [rawRoles]
+        : [];
 
-let authInitializationPromise:
-  Promise<AuthUser | null> | null = null;
+    let primaryRole = "staff";
 
-function initializeAuthOnce(): Promise<AuthUser | null> {
-  /*
-   * If another AuthProvider instance already
-   * started initialization, reuse the same promise.
-   */
-  if (authInitializationPromise) {
-    console.log(
-      "[Auth] Reusing existing initialization promise."
-    );
+    if (roles.includes("super_admin")) {
+      primaryRole = "super_admin";
+    } else if (roles.includes("admin")) {
+      primaryRole = "admin";
+    }
 
-    return authInitializationPromise;
-  }
+    return {
+      ...userData,
+      roles,
+      role: primaryRole,
+      session:
+        session || userData.session || null,
+    };
+  };
 
-  authInitializationPromise =
-    (async () => {
-      console.log(
-        "[Auth] Starting authentication initialization..."
-      );
+  useEffect(() => {
+    if (hasInitializedInSession()) {
+      // Already initialized in this JS session; do nothing.
+      setLoading(false);
+      setInitialized((prev) => prev || true);
+      setIsInitializing(false);
+      return;
+    }
 
+    setInitializedInSession();
+
+    let mounted = true;
+
+    async function initializeAuth() {
       try {
+        setLoading(true);
+
         const token = await getToken();
 
         console.log(
-          "[Auth] Stored token:",
-          token ? "exists" : "missing"
+          "[AuthProvider] Auth init token:",
+          token ? "exists" : "null"
         );
 
         if (!token) {
-          console.log(
-            "[Auth] No token found. User is logged out."
-          );
+          if (mounted) {
+            setUser(null);
+          }
 
-          return null;
+          return;
         }
 
         const response = await getProfile();
-
-        const userData =
-          extractUserData(response);
-
-        if (!userData) {
-          console.log(
-            "[Auth] Profile unavailable. Removing token."
-          );
-
-          await removeToken();
-
-          return null;
-        }
-
-        const formattedUser =
-          formatUserData(userData);
+        const userData = extractUserData(response);
 
         console.log(
-          "[Auth] Profile loaded successfully."
+          "[AuthProvider] Profile extracted:",
+          userData
         );
 
-        return formattedUser;
+        if (!mounted) {
+          return;
+        }
+
+        if (userData) {
+          setUser(formatUserData(userData));
+        } else {
+          await removeToken();
+          setUser(null);
+        }
       } catch (error: any) {
         console.error(
-          "[Auth] Initialization error:",
-          error?.response?.data ||
-            error?.message ||
-            error
+          "[AuthProvider] Auth initialization error:",
+          error?.response?.status,
+          error?.message
         );
 
         if (
@@ -227,51 +171,19 @@ function initializeAuthOnce(): Promise<AuthUser | null> {
           await removeToken();
         }
 
-        return null;
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          setInitialized((prev) => prev || true);
+          setIsInitializing(false);
+        }
       }
-    })();
+    }
 
-  return authInitializationPromise;
-}
-
-/* ================= PROVIDER ================= */
-export function AuthProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [user, setUser] =
-    useState<AuthUser>(null);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [initialized, setInitialized] =
-    useState(false);
-
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadAuth = async () => {
-      const authenticatedUser =
-        await initializeAuthOnce();
-
-      if (!mounted) {
-        return;
-      }
-
-      setUser(authenticatedUser);
-      setInitialized(true);
-      setLoading(false);
-
-      console.log(
-        "[Auth] Initialization completed."
-      );
-    };
-
-    loadAuth();
+    initializeAuth();
 
     return () => {
       mounted = false;
@@ -283,52 +195,55 @@ export function AuthProvider({
     password: string,
     deviceInfo: string
   ) => {
-    const response = await loginUser({
-      email,
-      password,
-      deviceInfo,
-    });
+    try {
+      setLoading(true);
 
-    const {
-      token,
-      session,
-    } = response.data;
+      const response = await loginUser({
+        email,
+        password,
+        deviceInfo,
+      });
 
-    const userData =
-      extractUserData(response);
-
-    if (!token || !userData) {
-      throw new Error(
-        "Invalid login response."
+      console.log(
+        "[AuthProvider] Login response:",
+        response.data
       );
+
+      const { token, session } = response.data;
+      const userData = extractUserData(response);
+
+      if (!token || !userData) {
+        throw new Error(
+          "Invalid login response"
+        );
+      }
+
+      const cleanUser = formatUserData(
+        userData,
+        session
+      );
+
+      await saveToken(token);
+
+      setUser(cleanUser);
+
+      return cleanUser;
+    } finally {
+      setLoading(false);
+      setInitialized((prev) => prev || true);
+      // Do NOT change isInitializing here
     }
-
-    const formattedUser =
-      formatUserData(userData, session);
-
-    await saveToken(token);
-
-    /*
-     * After login, update the current provider
-     * immediately.
-     */
-    setUser(formattedUser);
-
-    return formattedUser;
   };
 
   const logout = async () => {
     try {
       await removeToken();
-
       queryClient.clear();
-
       setUser(null);
+
+      // Do NOT reset initialized / isInitializing here
     } catch (error) {
-      console.error(
-        "[Auth] Logout error:",
-        error
-      );
+      console.error("[AuthProvider] Logout error:", error);
     }
   };
 
@@ -338,6 +253,7 @@ export function AuthProvider({
         user,
         loading,
         initialized,
+        isInitializing,
         login,
         logout,
       }}
@@ -345,18 +261,16 @@ export function AuthProvider({
       {children}
     </AuthContext.Provider>
   );
-}
+};
 
-/* ================= HOOK ================= */
-
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
 
   if (!context) {
     throw new Error(
-      "useAuth must be used inside AuthProvider."
+      "useAuth must be used inside AuthProvider"
     );
   }
 
   return context;
-}
+};
