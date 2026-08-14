@@ -2,34 +2,139 @@ import { Redirect } from "expo-router";
 
 import { useAuth } from "@/context/AuthContext";
 
+
 export default function Index() {
-  const { user } = useAuth();
+
+  const {
+    user,
+    isReady,
+  } = useAuth();
+
+
+  /* =========================================================
+     WAIT FOR AUTH
+  ========================================================= */
+
+  if (!isReady) {
+    return null;
+  }
+
+
+  /* =========================================================
+     LOGGED OUT
+     
+     The AppRouterController normally handles this,
+     but keeping this fallback makes "/" safe.
+  ========================================================= */
+
+  if (!user) {
+    return (
+      <Redirect
+        href="/auth/generalAuth/Login"
+      />
+    );
+  }
+
+
+  /* =========================================================
+     DASHBOARD TYPE
+  ========================================================= */
 
   const dashboardType =
-    user?.dashboardType;
+    user.dashboardType;
 
-  const dashboardRoutes: Record<
-    string,
-    string
-  > = {
-    super_admin:
-      "/dashboard/superAdminDashboard/overview/Overview",
 
-    owner:
-      "/dashboard/ownerDashboard/overview/Overview",
+  /* =========================================================
+     SUPER ADMIN
+  ========================================================= */
 
-    admin:
-      "/dashboard/adminDashboard/[branchId]/overview/Overview",
+  if (
+    dashboardType === "super_admin"
+  ) {
+    return (
+      <Redirect
+        href="/dashboard/superAdminDashboard/overview/Overview"
+      />
+    );
+  }
 
-    staff:
-      "/dashboard/staffDashboard/overview",
-  };
 
-  const destination =
-    dashboardRoutes[dashboardType] ||
-    "/dashboard/staffDashboard/overview/overview";
+  /* =========================================================
+     OWNER
+  ========================================================= */
+
+  if (
+    dashboardType === "owner"
+  ) {
+    return (
+      <Redirect
+        href="/dashboard/ownerDashboard/overview/Overview"
+      />
+    );
+  }
+
+
+  /* =========================================================
+     ADMIN
+  ========================================================= */
+
+  if (
+    dashboardType === "admin"
+  ) {
+
+    const branchId =
+      user.branchId;
+
+    if (!branchId) {
+
+      console.error(
+        "[Index] Admin user has no branchId"
+      );
+
+      return (
+        <Redirect
+          href="/auth/generalAuth/Login"
+        />
+      );
+    }
+
+    return (
+      <Redirect
+        href={
+          `/dashboard/adminDashboard/${branchId}/overview/Overview` as any
+        }
+      />
+    );
+  }
+
+
+  /* =========================================================
+     STAFF
+  ========================================================= */
+
+  if (
+    dashboardType === "staff"
+  ) {
+    return (
+      <Redirect
+        href="/dashboard/staffDashboard/overview"
+      />
+    );
+  }
+
+
+  /* =========================================================
+     UNKNOWN DASHBOARD
+  ========================================================= */
+
+  console.warn(
+    "[Index] Unknown dashboard type:",
+    dashboardType
+  );
 
   return (
-    <Redirect href={destination as any} />
+    <Redirect
+      href="/dashboard/staffDashboard/overview"
+    />
   );
 }

@@ -4,7 +4,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { router } from "expo-router";
+
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -18,52 +18,79 @@ import {
   removeToken,
 } from "@/utils/token";
 
+
 interface AuthContextType {
   user: any | null;
+
   loading: boolean;
+
   initialized: boolean;
+
   isInitializing: boolean;
+
+  isReady: boolean;
+
   login: (
     email: string,
     password: string,
     deviceInfo: string
   ) => Promise<any>;
+
   logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<
-  AuthContextType | null
->(null);
 
-// Global flag: survives remounts and most Fast Refresh scenarios
-const GLOBAL_KEY = "__CLOCKEE_AUTH_INITIALIZED__";
+const AuthContext =
+  createContext<AuthContextType | null>(null);
 
-function hasInitializedInSession(): boolean {
-  if (typeof global !== "undefined") {
-    return !!((global as any)[GLOBAL_KEY]);
-  }
-  return false;
-}
-
-function setInitializedInSession(): void {
-  if (typeof global !== "undefined") {
-    (global as any)[GLOBAL_KEY] = true;
-  }
-}
 
 export const AuthProvider = ({
   children,
 }: {
   children: React.ReactNode;
 }) => {
-  const [user, setUser] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
 
-  const queryClient = useQueryClient();
+  const [user, setUser] =
+    useState<any | null>(null);
 
-  const extractUserData = (response: any) => {
+  /**
+   * General loading state.
+   *
+   * Used for login/logout operations too.
+   */
+  const [loading, setLoading] =
+    useState(true);
+
+  /**
+   * Initial authentication check completed.
+   */
+  const [initialized, setInitialized] =
+    useState(false);
+
+  /**
+   * ONLY true during initial startup authentication.
+   */
+  const [isInitializing, setIsInitializing] =
+    useState(true);
+
+  /**
+   * Main startup-ready flag.
+   */
+  const [isReady, setIsReady] =
+    useState(false);
+
+  const queryClient =
+    useQueryClient();
+
+
+  /* =========================================================
+     EXTRACT USER
+  ========================================================= */
+
+  const extractUserData = (
+    response: any
+  ) => {
+
     if (!response?.data) {
       return null;
     }
@@ -75,177 +102,497 @@ export const AuthProvider = ({
     );
   };
 
+
+  /* =========================================================
+     FORMAT USER
+  ========================================================= */
+
   const formatUserData = (
     userData: any,
     session?: any
   ) => {
+
     if (!userData) {
       return null;
     }
 
-    const rawRoles = userData.role;
+    const rawRoles =
+      userData.role;
 
-    const roles = Array.isArray(rawRoles)
-      ? rawRoles
-      : rawRoles
-        ? [rawRoles]
-        : [];
+    const roles =
+      Array.isArray(rawRoles)
+        ? rawRoles
+        : rawRoles
+          ? [rawRoles]
+          : [];
 
-    let primaryRole = "staff";
 
-    if (roles.includes("super_admin")) {
-      primaryRole = "super_admin";
-    } else if (roles.includes("admin")) {
-      primaryRole = "admin";
+    let primaryRole =
+      "staff";
+
+
+    if (
+      roles.includes(
+        "super_admin"
+      )
+    ) {
+
+      primaryRole =
+        "super_admin";
+
+    } else if (
+      roles.includes("admin")
+    ) {
+
+      primaryRole =
+        "admin";
+
+    } else if (
+      roles.includes("owner")
+    ) {
+
+      primaryRole =
+        "owner";
     }
+
 
     return {
       ...userData,
+
       roles,
+
       role: primaryRole,
+
       session:
-        session || userData.session || null,
+        session ||
+        userData.session ||
+        userData.activeSession ||
+        null,
     };
   };
 
-  useEffect(() => {
-    if (hasInitializedInSession()) {
-      // Already initialized in this JS session; do nothing.
-      setLoading(false);
-      setInitialized((prev) => prev || true);
-      setIsInitializing(false);
-      return;
-    }
 
-    setInitializedInSession();
+  /* =========================================================
+     INITIAL AUTHENTICATION
+     
+     RUNS ONCE WHEN APP OPENS.
+  ========================================================= */
+
+  useEffect(() => {
 
     let mounted = true;
 
-    async function initializeAuth() {
-      try {
-        setLoading(true);
 
-        const token = await getToken();
+    const initializeAuth =
+      async () => {
+        const splashStartTime = Date.now();
 
-        console.log(
-          "[AuthProvider] Auth init token:",
-          token ? "exists" : "null"
-        );
+        try {
 
-        if (!token) {
-          if (mounted) {
+          setLoading(true);
+
+          setIsInitializing(true);
+
+          setIsReady(false);
+
+
+          /* =================================================
+             GET SAVED TOKEN
+          ================================================= */
+
+          const token =
+            await getToken();
+
+
+          console.log(
+            "[AuthProvider] Auth init token:",
+            token
+              ? "exists"
+              : "null"
+          );
+
+
+          /* =================================================
+             NO TOKEN
+          ================================================= */
+
+          if (!token) {
+
+            if (!mounted) {
+              return;
+            }
+
+            setUser(null);
+
+            console.log(
+              "[AuthProvider] No token - user is logged out"
+            );
+
+            return;
+          }
+
+
+          /* =================================================
+             TOKEN EXISTS
+             
+             RESTORE USER SESSION
+          ================================================= */
+
+          const response =
+            await getProfile();
+
+
+          const userData =
+            extractUserData(
+              response
+            );
+
+
+          console.log(
+            "[AuthProvider] Profile extracted:",
+            userData
+          );
+
+
+          if (!mounted) {
+            return;
+          }
+
+
+          /* =================================================
+             VALID PROFILE
+          ================================================= */
+
+          if (userData) {
+
+            const formattedUser =
+              formatUserData(
+                userData
+              );
+
+
+            console.log(
+              "[AuthProvider] Restored authenticated user:",
+              {
+                id:
+                  formattedUser?.id,
+
+                name:
+                  formattedUser?.name,
+
+                role:
+                  formattedUser?.role,
+
+                dashboardType:
+                  formattedUser?.dashboardType,
+
+                branchId:
+                  formattedUser?.branchId,
+              }
+            );
+
+
+            setUser(
+              formattedUser
+            );
+
+
+          } else {
+
+            /* ===============================================
+               INVALID TOKEN
+            =============================================== */
+
+            console.log(
+              "[AuthProvider] Invalid profile - removing token"
+            );
+
+
+            await removeToken();
+
+
+            if (!mounted) {
+              return;
+            }
+
+
             setUser(null);
           }
 
-          return;
-        }
 
-        const response = await getProfile();
-        const userData = extractUserData(response);
+        } catch (error: any) {
 
-        console.log(
-          "[AuthProvider] Profile extracted:",
-          userData
-        );
+          console.error(
+            "[AuthProvider] Auth initialization error:",
+            error?.response?.status,
+            error?.response?.data ||
+              error?.message ||
+              error
+          );
 
-        if (!mounted) {
-          return;
-        }
 
-        if (userData) {
-          setUser(formatUserData(userData));
-        } else {
-          await removeToken();
+          /* ===============================================
+             INVALID TOKEN
+          =============================================== */
+
+          if (
+            error?.response?.status ===
+            401
+          ) {
+
+            try {
+
+              await removeToken();
+
+            } catch (
+              removeError
+            ) {
+
+              console.error(
+                "[AuthProvider] Failed removing invalid token:",
+                removeError
+              );
+            }
+          }
+
+
+          if (!mounted) {
+            return;
+          }
+
+
           setUser(null);
-        }
-      } catch (error: any) {
-        console.error(
-          "[AuthProvider] Auth initialization error:",
-          error?.response?.status,
-          error?.message
-        );
 
-        if (
-          error?.response?.status === 401
-        ) {
-          await removeToken();
-        }
 
-        if (mounted) {
-          setUser(null);
-        }
-      } finally {
-        if (mounted) {
+        } finally {
+
+          if (!mounted) {
+            return;
+          }
+
+
+          /* ===============================================
+             AUTH INITIALIZATION COMPLETE
+          =============================================== */
+
+          const elapsed =
+            Date.now() - splashStartTime;
+
+          const remainingTime =
+            Math.max(0, 3000 - elapsed);
+
+          if (remainingTime > 0) {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, remainingTime);
+            });
+          }
+
+          if (!mounted) return;
+
           setLoading(false);
-          setInitialized((prev) => prev || true);
+
+          setInitialized(true);
+
           setIsInitializing(false);
+
+          setIsReady(true);
+
+
+          console.log(
+            "[AuthProvider] Authentication initialization complete"
+          );
         }
-      }
-    }
+      };
+
 
     initializeAuth();
+
 
     return () => {
       mounted = false;
     };
+
   }, []);
+
+
+  /* =========================================================
+     LOGIN
+  ========================================================= */
 
   const login = async (
     email: string,
     password: string,
     deviceInfo: string
   ) => {
+
     try {
+
       setLoading(true);
 
-      const response = await loginUser({
-        email,
-        password,
-        deviceInfo,
-      });
+
+      const response =
+        await loginUser({
+          email,
+          password,
+          deviceInfo,
+        });
+
 
       console.log(
         "[AuthProvider] Login response:",
-        response.data
+        response?.data
       );
 
-      const { token, session } = response.data;
-      const userData = extractUserData(response);
 
-      if (!token || !userData) {
+      const token =
+        response?.data?.token;
+
+
+      const session =
+        response?.data?.session;
+
+
+      const userData =
+        extractUserData(
+          response
+        );
+
+
+      if (
+        !token ||
+        !userData
+      ) {
+
         throw new Error(
           "Invalid login response"
         );
       }
 
-      const cleanUser = formatUserData(
-        userData,
-        session
-      );
+
+      const cleanUser =
+        formatUserData(
+          userData,
+          session
+        );
+
+
+      /* ===============================================
+         SAVE TOKEN
+      =============================================== */
 
       await saveToken(token);
 
-      setUser(cleanUser);
+
+      /* ===============================================
+         UPDATE USER
+      =============================================== */
+
+      setUser(
+        cleanUser
+      );
+
+
+      console.log(
+        "[AuthProvider] Login successful:",
+        {
+          id:
+            cleanUser?.id,
+
+          name:
+            cleanUser?.name,
+
+          role:
+            cleanUser?.role,
+
+          dashboardType:
+            cleanUser?.dashboardType,
+        }
+      );
+
 
       return cleanUser;
+
+
     } finally {
+
       setLoading(false);
-      setInitialized((prev) => prev || true);
-      // Do NOT change isInitializing here
+
+      /**
+       * Login is NOT an app restart.
+       *
+       * Therefore don't show startup splash.
+       */
+      setInitialized(true);
+
+      setIsReady(true);
+
+      setIsInitializing(false);
     }
   };
+
+
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   const logout = async () => {
+
     try {
+
+      setLoading(true);
+
+
       await removeToken();
+
+
+      /**
+       * Clear cached application data.
+       */
       queryClient.clear();
+
+
+      /**
+       * Remove current authenticated user.
+       */
       setUser(null);
 
-      // Do NOT reset initialized / isInitializing here
+
+      console.log(
+        "[AuthProvider] User logged out"
+      );
+
+
     } catch (error) {
-      console.error("[AuthProvider] Logout error:", error);
+
+      console.error(
+        "[AuthProvider] Logout error:",
+        error
+      );
+
+
+    } finally {
+
+      setLoading(false);
+
+      /**
+       * IMPORTANT:
+       *
+       * Logout is NOT startup.
+       *
+       * Therefore don't show splash.
+       */
+      setIsInitializing(false);
+
+      setIsReady(true);
+
+      setInitialized(true);
     }
   };
+
+
+  /* =========================================================
+     PROVIDER
+  ========================================================= */
 
   return (
     <AuthContext.Provider
@@ -254,6 +601,7 @@ export const AuthProvider = ({
         loading,
         initialized,
         isInitializing,
+        isReady,
         login,
         logout,
       }}
@@ -263,14 +611,24 @@ export const AuthProvider = ({
   );
 };
 
+
+/* =========================================================
+   USE AUTH
+========================================================= */
+
 export const useAuth = () => {
-  const context = useContext(AuthContext);
+
+  const context =
+    useContext(AuthContext);
+
 
   if (!context) {
+
     throw new Error(
       "useAuth must be used inside AuthProvider"
     );
   }
+
 
   return context;
 };
