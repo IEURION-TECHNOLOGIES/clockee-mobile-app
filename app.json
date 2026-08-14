@@ -28,6 +28,7 @@
         "foregroundImage": "./assets/images/clockee_foreground.png",
         "monochromeImage": "./assets/images/clockee_monochrome.png"
       },
+
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -46,9 +47,9 @@
           "image": "./assets/images/clockee_logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#0093DD",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#0093DD"
           }
         }
       ],
@@ -73,3 +74,5 @@
     }
   }
 }
+
+
