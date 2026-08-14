@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 
-import DevResetOnboarding from "@/components/DevResetOnboarding";
+// import DevResetOnboarding from "@/components/DevResetOnboarding";
 import ClockLoader from "../../../components/ClockLoader";
 import ResponseModal from "../../../components/ResponseModal";
 import { useAuth } from "../../../context/AuthContext";
@@ -482,7 +482,7 @@ console.log(
         </View>
       )}
 
-      <DevResetOnboarding />
+      {/* <DevResetOnboarding /> */}
 
       {/* ================= RESPONSE MODAL ================= */}
 

@@ -17,12 +17,17 @@
       "package": "com.ieurion.clockee",
       "versionCode": 1,
 
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDGZAW0zsuybui3mFB2_XJ4fvAUb5JITls"
+        }
+      },
+
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/clockee_foreground.png",
         "monochromeImage": "./assets/images/clockee_monochrome.png"
       },
-
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
