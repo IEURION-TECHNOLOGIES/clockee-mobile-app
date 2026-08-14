@@ -1,17 +1,19 @@
 {
   "expo": {
     "name": "Clockee",
-    "slug": "Clockee",
+    "slug": "clockee",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/clockee_logo.png",
-    "scheme": "Clockee",
+    "scheme": "clockee",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.ieurion.clockee",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/clockee_logo.png",
@@ -48,6 +50,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4899e60a-3229-431c-8d2a-924e07f53777"
+      }
     }
   }
 }
