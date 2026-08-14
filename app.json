@@ -8,27 +8,33 @@
     "scheme": "clockee",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "package": "com.ieurion.clockee",
       "versionCode": 1,
+
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/clockee_logo.png",
-        "backgroundImage": "./assets/images/clockee_logo.png",
-        "monochromeImage": "./assets/images/clockee_logo.png"
+        "foregroundImage": "./assets/images/clockee_foreground.png",
+        "monochromeImage": "./assets/images/clockee_monochrome.png"
       },
+
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
+
     "web": {
       "output": "static",
       "favicon": "./assets/images/clockee_logo.png"
     },
+
     "plugins": [
       "expo-router",
+
       [
         "expo-splash-screen",
         {
@@ -41,16 +47,19 @@
           }
         }
       ],
+
       "expo-secure-store",
       "expo-mail-composer",
       "expo-font",
       "expo-web-browser",
       "@react-native-community/datetimepicker"
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {
