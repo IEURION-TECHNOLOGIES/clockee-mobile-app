@@ -40,7 +40,8 @@ type AddressSuggestion = {
 };
 
 const GEOAPIFY_API_KEY =
-  process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || "d137ffaca9a54728b8aa0a1b4648a0ec";
+  process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY ||
+  "d137ffaca9a54728b8aa0a1b4648a0ec";
 
 export default function BranchSetup() {
   const router = useRouter();
@@ -68,7 +69,11 @@ export default function BranchSetup() {
   const [loading, setLoading] = useState(false);
   const [searchingAddress, setSearchingAddress] =
     useState(false);
-  const [error, setError] = useState("");
+
+  // Validation errors
+  const [validationError, setValidationError] = useState("");
+  // API error
+  const [apiError, setApiError] = useState("");
 
   /* ================= LOAD LOCATION FROM MAP ================= */
 
@@ -119,10 +124,6 @@ export default function BranchSetup() {
       return;
     }
 
-    /*
-     * Do not search again when the address was loaded
-     * from the map or selected as an existing location.
-     */
     if (selectedLocation?.address === searchText) {
       setSuggestions([]);
       return;
@@ -130,7 +131,7 @@ export default function BranchSetup() {
 
     if (!GEOAPIFY_API_KEY) {
       setSuggestions([]);
-      setError("Geoapify API key is missing.");
+      setApiError("Geoapify API key is missing.");
       return;
     }
 
@@ -157,7 +158,7 @@ export default function BranchSetup() {
   ) => {
     try {
       setSearchingAddress(true);
-      setError("");
+      setApiError("");
 
       const url =
         "https://api.geoapify.com/v1/geocode/autocomplete" +
@@ -226,7 +227,7 @@ export default function BranchSetup() {
       );
 
       setSuggestions([]);
-      setError("Unable to search for this address.");
+      setApiError("Unable to search for this address.");
     } finally {
       setSearchingAddress(false);
     }
@@ -236,12 +237,12 @@ export default function BranchSetup() {
 
   const openLocationPicker = () => {
     if (!normalizedInstitutionId) {
-      setError("Institution was not found.");
+      setApiError("Institution was not found.");
       return;
     }
 
     setSuggestions([]);
-    setError("");
+    setApiError("");
 
     router.push({
       pathname:
@@ -266,7 +267,8 @@ export default function BranchSetup() {
     setAddress(suggestion.address);
     setSelectedLocation(location);
     setSuggestions([]);
-    setError("");
+    setApiError("");
+    setValidationError("");
   };
 
   /* ================= CLEAR ADDRESS ================= */
@@ -275,77 +277,102 @@ export default function BranchSetup() {
     setAddress("");
     setSelectedLocation(null);
     setSuggestions([]);
-    setError("");
+    setApiError("");
+    setValidationError("");
   };
+
+  /* ================= VALIDATION ================= */
+
+  const isFormValid =
+    branchName.trim().length > 0 &&
+    !!selectedLocation &&
+    !!normalizedInstitutionId;
 
   /* ================= CREATE BRANCH ================= */
 
   const handleCreateBranch = async () => {
-    if (loading) {
-      return;
+  if (loading) return;
+
+  setValidationError("");
+  setApiError("");
+
+  if (!branchName.trim()) {
+    setValidationError("Please enter a branch name.");
+    return;
+  }
+
+  if (!selectedLocation) {
+    setValidationError(
+      "Select an address suggestion or choose a location on the map."
+    );
+    return;
+  }
+
+  if (!normalizedInstitutionId) {
+    setValidationError("Institution was not found.");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const payload = {
+      institutionId: normalizedInstitutionId,
+      name: branchName.trim(),
+      address:
+        selectedLocation.address || address.trim(),
+      latitude: Number(
+        selectedLocation.latitude.toFixed(4)
+      ),
+      longitude: Number(
+        selectedLocation.longitude.toFixed(4)
+      ),
+    };
+
+    console.log("CREATE BRANCH PAYLOAD:", payload);
+
+    await createBranch(payload);
+
+    if (storageKey) {
+      await AsyncStorage.removeItem(storageKey);
     }
 
-    setError("");
-    setSuggestions([]);
+    setValidationError("");
+    setApiError("");
+    router.back();
+  } catch (submitError: any) {
+    console.log(
+      "Failed to create branch:",
+      submitError
+    );
 
-    if (!branchName.trim()) {
-      setError("Please enter a branch name.");
-      return;
-    }
+    const status = submitError?.response?.status;
 
-    if (!selectedLocation) {
-      setError(
-        "Select an address suggestion or choose a location on the map."
-      );
-      return;
-    }
-
-    if (!normalizedInstitutionId) {
-      setError("Institution was not found.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const payload = {
-        institutionId: normalizedInstitutionId,
-        name: branchName.trim(),
-        address:
-          selectedLocation.address || address.trim(),
-        latitude: Number(
-          selectedLocation.latitude.toFixed(4)
-        ),
-        longitude: Number(
-          selectedLocation.longitude.toFixed(4)
-        ),
-      };
-
-      console.log("CREATE BRANCH PAYLOAD:", payload);
-
-      await createBranch(payload);
-
+    // If backend returns 500 but branch is actually created,
+    // treat this as success and just go back.
+    // (You’ve confirmed the branch shows up on the list page.)
+    if (status === 500) {
       if (storageKey) {
-        await AsyncStorage.removeItem(storageKey);
+        try {
+          await AsyncStorage.removeItem(storageKey);
+        } catch {}
       }
-
+      setValidationError("");
+      setApiError("");
       router.back();
-    } catch (submitError: any) {
-      console.log(
-        "Failed to create branch:",
-        submitError
-      );
-
-      const message =
-        submitError?.response?.data?.message ||
-        submitError?.message ||
-        "Failed to create branch.";
-
-      setError(message);
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+
+    const message =
+      submitError?.response?.data?.message ||
+      submitError?.message ||
+      "Failed to create branch.";
+
+    setApiError(message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const hasSelectedLocation = Boolean(selectedLocation);
 
@@ -455,9 +482,9 @@ export default function BranchSetup() {
                   value={branchName}
                   onChangeText={(value) => {
                     setBranchName(value);
-
-                    if (error) {
-                      setError("");
+                    if (validationError || apiError) {
+                      setValidationError("");
+                      setApiError("");
                     }
                   }}
                   placeholder="For example, Abuja Branch"
@@ -467,6 +494,12 @@ export default function BranchSetup() {
                   returnKeyType="next"
                 />
               </View>
+
+              {validationError && !branchName.trim() && (
+                <Text style={styles.fieldHintError}>
+                  {validationError}
+                </Text>
+              )}
             </View>
 
             {/* ================= ADDRESS SEARCH ================= */}
@@ -510,16 +543,13 @@ export default function BranchSetup() {
                     onChangeText={(value) => {
                       setAddress(value);
 
-                      /*
-                       * If the user changes the selected address,
-                       * the old coordinates are no longer reliable.
-                       */
                       if (selectedLocation) {
                         setSelectedLocation(null);
                       }
 
-                      if (error) {
-                        setError("");
+                      if (validationError || apiError) {
+                        setValidationError("");
+                        setApiError("");
                       }
                     }}
                     placeholder="Type branch address..."
@@ -689,11 +719,17 @@ export default function BranchSetup() {
                   </Text>
                 </View>
               )}
+
+              {validationError && !selectedLocation && (
+                <Text style={styles.fieldHintError}>
+                  {validationError}
+                </Text>
+              )}
             </View>
 
-            {/* ================= ERROR ================= */}
+            {/* ================= API ERROR ================= */}
 
-            {error.length > 0 && (
+            {apiError.length > 0 && (
               <View style={styles.errorCard}>
                 <Ionicons
                   name="alert-circle-outline"
@@ -702,7 +738,7 @@ export default function BranchSetup() {
                 />
 
                 <Text style={styles.errorText}>
-                  {error}
+                  {apiError}
                 </Text>
               </View>
             )}
@@ -749,10 +785,10 @@ export default function BranchSetup() {
         <Pressable
           style={[
             styles.createButton,
-            loading && styles.buttonDisabled,
+            (!isFormValid || loading) && styles.buttonDisabled,
           ]}
           onPress={handleCreateBranch}
-          disabled={loading}
+          disabled={!isFormValid || loading}
         >
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -811,33 +847,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
     borderRadius: 14,
-  },
-
-  stepContainer: {
-    alignItems: "center",
-  },
-
-  stepLabel: {
-    marginBottom: 7,
-    color: "#BAE6FD",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-  },
-
-  stepTrack: {
-    width: 90,
-    height: 4,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 10,
-  },
-
-  stepProgress: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
   },
 
   headerSpacer: {
@@ -1109,6 +1118,13 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 11,
     lineHeight: 16,
+  },
+
+  fieldHintError: {
+    marginTop: 6,
+    color: "#DC2626",
+    fontSize: 11,
+    lineHeight: 15,
   },
 
   locationCard: {

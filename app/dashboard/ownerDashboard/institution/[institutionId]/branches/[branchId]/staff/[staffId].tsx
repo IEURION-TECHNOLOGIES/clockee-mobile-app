@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -154,21 +155,43 @@ export default function StaffProfile() {
   const weeklyTrend = staffData?.attendance?.weeklyTrend ?? [];
 
   /* ================= ACTION HANDLER ================= */
-  const runAction = async (fn: Function, extraParams?: any[]) => {
-    try {
-      setLoadingAction(true);
-      const currentStaffId = paramStaffId || staff?._id;
-      if (!currentStaffId) throw new Error("User ID not found");
-      if (extraParams) await fn(currentStaffId, ...extraParams);
-      else await fn(currentStaffId);
-      await queryClient.invalidateQueries({ queryKey: ["staffProfile", paramStaffId] });
-    } catch (err) {
-      console.error("Action failed:", err);
-    } finally {
-      setLoadingAction(false);
-      setActionVisible(false);
+ const runAction = async (fn: Function, extraParams?: any[]) => {
+  try {
+    setLoadingAction(true);
+
+    const currentStaffId = paramStaffId || staff?._id;
+    if (!currentStaffId) {
+      throw new Error("User ID not found");
     }
-  };
+
+    // Temporary debug wrapper
+    const wrappedFn = async (id: string, ...args: any[]) => {
+      const res = await fn(id, ...args);
+      console.log("ACTION RESPONSE:", res);
+      return res;
+    };
+
+    if (extraParams) {
+      await wrappedFn(currentStaffId, ...extraParams);
+    } else {
+      await wrappedFn(currentStaffId);
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ["staffProfile", paramStaffId],
+    });
+
+    setActionVisible(false);
+  } catch (err: any) {
+    console.error("=== ACTION ERROR ===");
+    console.error("Full error:", err);
+    console.error("Status:", err?.response?.status);
+    console.error("Data:", err?.response?.data);
+    console.error("Config:", err?.config);
+  } finally {
+    setLoadingAction(false);
+  }
+};
 
   /* ================= STATES ================= */
   if (isLoading) {
@@ -470,7 +493,7 @@ export default function StaffProfile() {
         remoteAccess={remoteAccess}
         loading={loadingAction}
         onClose={() => setActionVisible(false)}
-        onDemote={() => runAction(promoteToAdmin)}
+        onPromote={() => runAction(promoteToAdmin)}
         onDeactivate={() => runAction(deactivateUser)}
         onReactivate={() => runAction(reactivateUser)}
         onToggleRemote={() => runAction(allowRemoteClocking, [institutionId!, !remoteAccess])}
