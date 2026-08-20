@@ -40,8 +40,7 @@ type AddressSuggestion = {
 };
 
 const GEOAPIFY_API_KEY =
-  process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY ||
-  "d137ffaca9a54728b8aa0a1b4648a0ec";
+  process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || "d137ffaca9a54728b8aa0a1b4648a0ec";
 
 export default function BranchSetup() {
   const router = useRouter();
@@ -69,11 +68,7 @@ export default function BranchSetup() {
   const [loading, setLoading] = useState(false);
   const [searchingAddress, setSearchingAddress] =
     useState(false);
-
-  // Validation errors
-  const [validationError, setValidationError] = useState("");
-  // API error
-  const [apiError, setApiError] = useState("");
+  const [error, setError] = useState("");
 
   /* ================= LOAD LOCATION FROM MAP ================= */
 
@@ -124,6 +119,10 @@ export default function BranchSetup() {
       return;
     }
 
+    /*
+     * Do not search again when the address was loaded
+     * from the map or selected as an existing location.
+     */
     if (selectedLocation?.address === searchText) {
       setSuggestions([]);
       return;
@@ -131,7 +130,7 @@ export default function BranchSetup() {
 
     if (!GEOAPIFY_API_KEY) {
       setSuggestions([]);
-      setApiError("Geoapify API key is missing.");
+      setError("Geoapify API key is missing.");
       return;
     }
 
@@ -158,7 +157,7 @@ export default function BranchSetup() {
   ) => {
     try {
       setSearchingAddress(true);
-      setApiError("");
+      setError("");
 
       const url =
         "https://api.geoapify.com/v1/geocode/autocomplete" +
@@ -227,7 +226,7 @@ export default function BranchSetup() {
       );
 
       setSuggestions([]);
-      setApiError("Unable to search for this address.");
+      setError("Unable to search for this address.");
     } finally {
       setSearchingAddress(false);
     }
@@ -237,12 +236,12 @@ export default function BranchSetup() {
 
   const openLocationPicker = () => {
     if (!normalizedInstitutionId) {
-      setApiError("Institution was not found.");
+      setError("Institution was not found.");
       return;
     }
 
     setSuggestions([]);
-    setApiError("");
+    setError("");
 
     router.push({
       pathname:
@@ -267,8 +266,7 @@ export default function BranchSetup() {
     setAddress(suggestion.address);
     setSelectedLocation(location);
     setSuggestions([]);
-    setApiError("");
-    setValidationError("");
+    setError("");
   };
 
   /* ================= CLEAR ADDRESS ================= */
@@ -277,102 +275,77 @@ export default function BranchSetup() {
     setAddress("");
     setSelectedLocation(null);
     setSuggestions([]);
-    setApiError("");
-    setValidationError("");
+    setError("");
   };
-
-  /* ================= VALIDATION ================= */
-
-  const isFormValid =
-    branchName.trim().length > 0 &&
-    !!selectedLocation &&
-    !!normalizedInstitutionId;
 
   /* ================= CREATE BRANCH ================= */
 
   const handleCreateBranch = async () => {
-  if (loading) return;
-
-  setValidationError("");
-  setApiError("");
-
-  if (!branchName.trim()) {
-    setValidationError("Please enter a branch name.");
-    return;
-  }
-
-  if (!selectedLocation) {
-    setValidationError(
-      "Select an address suggestion or choose a location on the map."
-    );
-    return;
-  }
-
-  if (!normalizedInstitutionId) {
-    setValidationError("Institution was not found.");
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    const payload = {
-      institutionId: normalizedInstitutionId,
-      name: branchName.trim(),
-      address:
-        selectedLocation.address || address.trim(),
-      latitude: Number(
-        selectedLocation.latitude.toFixed(4)
-      ),
-      longitude: Number(
-        selectedLocation.longitude.toFixed(4)
-      ),
-    };
-
-    console.log("CREATE BRANCH PAYLOAD:", payload);
-
-    await createBranch(payload);
-
-    if (storageKey) {
-      await AsyncStorage.removeItem(storageKey);
-    }
-
-    setValidationError("");
-    setApiError("");
-    router.back();
-  } catch (submitError: any) {
-    console.log(
-      "Failed to create branch:",
-      submitError
-    );
-
-    const status = submitError?.response?.status;
-
-    // If backend returns 500 but branch is actually created,
-    // treat this as success and just go back.
-    // (You’ve confirmed the branch shows up on the list page.)
-    if (status === 500) {
-      if (storageKey) {
-        try {
-          await AsyncStorage.removeItem(storageKey);
-        } catch {}
-      }
-      setValidationError("");
-      setApiError("");
-      router.back();
+    if (loading) {
       return;
     }
 
-    const message =
-      submitError?.response?.data?.message ||
-      submitError?.message ||
-      "Failed to create branch.";
+    setError("");
+    setSuggestions([]);
 
-    setApiError(message);
-  } finally {
-    setLoading(false);
-  }
-};
+    if (!branchName.trim()) {
+      setError("Please enter a branch name.");
+      return;
+    }
+
+    if (!selectedLocation) {
+      setError(
+        "Select an address suggestion or choose a location on the map."
+      );
+      return;
+    }
+
+    if (!normalizedInstitutionId) {
+      setError("Institution was not found.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const payload = {
+        institutionId: normalizedInstitutionId,
+        name: branchName.trim(),
+        address:
+          selectedLocation.address || address.trim(),
+        latitude: Number(
+          selectedLocation.latitude.toFixed(4)
+        ),
+        longitude: Number(
+          selectedLocation.longitude.toFixed(4)
+        ),
+      };
+
+      console.log("CREATE BRANCH PAYLOAD:", payload);
+
+      await createBranch(payload);
+
+      if (storageKey) {
+        await AsyncStorage.removeItem(storageKey);
+      }
+
+      router.back();
+    } catch (submitError: any) {
+      console.log(
+        "Failed to create branch:",
+        submitError
+      );
+
+      const message =
+        submitError?.response?.data?.message ||
+        submitError?.message ||
+        "Failed to create branch.";
+
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const hasSelectedLocation = Boolean(selectedLocation);
 
@@ -482,9 +455,9 @@ export default function BranchSetup() {
                   value={branchName}
                   onChangeText={(value) => {
                     setBranchName(value);
-                    if (validationError || apiError) {
-                      setValidationError("");
-                      setApiError("");
+
+                    if (error) {
+                      setError("");
                     }
                   }}
                   placeholder="For example, Abuja Branch"
@@ -494,12 +467,6 @@ export default function BranchSetup() {
                   returnKeyType="next"
                 />
               </View>
-
-              {validationError && !branchName.trim() && (
-                <Text style={styles.fieldHintError}>
-                  {validationError}
-                </Text>
-              )}
             </View>
 
             {/* ================= ADDRESS SEARCH ================= */}
@@ -543,13 +510,16 @@ export default function BranchSetup() {
                     onChangeText={(value) => {
                       setAddress(value);
 
+                      /*
+                       * If the user changes the selected address,
+                       * the old coordinates are no longer reliable.
+                       */
                       if (selectedLocation) {
                         setSelectedLocation(null);
                       }
 
-                      if (validationError || apiError) {
-                        setValidationError("");
-                        setApiError("");
+                      if (error) {
+                        setError("");
                       }
                     }}
                     placeholder="Type branch address..."
@@ -719,17 +689,11 @@ export default function BranchSetup() {
                   </Text>
                 </View>
               )}
-
-              {validationError && !selectedLocation && (
-                <Text style={styles.fieldHintError}>
-                  {validationError}
-                </Text>
-              )}
             </View>
 
-            {/* ================= API ERROR ================= */}
+            {/* ================= ERROR ================= */}
 
-            {apiError.length > 0 && (
+            {error.length > 0 && (
               <View style={styles.errorCard}>
                 <Ionicons
                   name="alert-circle-outline"
@@ -738,7 +702,7 @@ export default function BranchSetup() {
                 />
 
                 <Text style={styles.errorText}>
-                  {apiError}
+                  {error}
                 </Text>
               </View>
             )}
@@ -785,10 +749,10 @@ export default function BranchSetup() {
         <Pressable
           style={[
             styles.createButton,
-            (!isFormValid || loading) && styles.buttonDisabled,
+            loading && styles.buttonDisabled,
           ]}
           onPress={handleCreateBranch}
-          disabled={!isFormValid || loading}
+          disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -847,6 +811,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
     borderRadius: 14,
+  },
+
+  stepContainer: {
+    alignItems: "center",
+  },
+
+  stepLabel: {
+    marginBottom: 7,
+    color: "#BAE6FD",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+
+  stepTrack: {
+    width: 90,
+    height: 4,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderRadius: 10,
+  },
+
+  stepProgress: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
   },
 
   headerSpacer: {
@@ -1118,13 +1109,6 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 11,
     lineHeight: 16,
-  },
-
-  fieldHintError: {
-    marginTop: 6,
-    color: "#DC2626",
-    fontSize: 11,
-    lineHeight: 15,
   },
 
   locationCard: {
