@@ -231,6 +231,19 @@ export default function BranchProfile() {
     });
   };
 
+  const openStaffList = (type: "admins" | "staff") => {
+  router.push({
+    pathname:
+      "/dashboard/ownerDashboard/institution/[institutionId]/branches/[branchId]/staff/staffList",
+    params: {
+      institutionId,
+      branchId,
+      type,
+      branch: JSON.stringify(branch),
+    },
+  });
+};
+
   const openStaffProfile = (staff: any) => {
     router.push({
       pathname:
@@ -462,9 +475,7 @@ export default function BranchProfile() {
 
             {showViewAllAdmins && (
               <Pressable
-                onPress={() => {
-                  // Add your admin list route here.
-                }}
+                onPress={() => openStaffList("admins")}
               >
                 <Text style={styles.viewAllText}>
                   View all
@@ -571,9 +582,7 @@ export default function BranchProfile() {
 
             {showViewAllStaff && (
               <Pressable
-                onPress={() => {
-                  // Add your staff list route here.
-                }}
+                onPress={() => openStaffList("staff")}
               >
                 <Text style={styles.viewAllText}>
                   View all

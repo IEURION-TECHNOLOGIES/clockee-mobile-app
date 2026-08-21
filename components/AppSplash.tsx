@@ -53,7 +53,7 @@ export default function SplashScreen() {
         />
 
         <Text style={styles.title}>
-          Clockee
+          Klockee
         </Text>
 
         <Text style={styles.subtitle}>

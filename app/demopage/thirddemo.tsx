@@ -81,7 +81,7 @@ export default function ThirdDemoScreen() {
             source={require("../../assets/images/splash/clockee_logo.png")}
             style={styles.logo}
           />
-          <Text style={styles.appName}>Clockee</Text>
+          <Text style={styles.appName}>Klockee</Text>
         </View>
 
         <Text style={styles.description}>

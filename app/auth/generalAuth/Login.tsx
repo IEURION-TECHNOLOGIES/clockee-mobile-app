@@ -236,7 +236,7 @@ console.log(
               </View>
 
               <Text style={styles.brandName}>
-                Clockee
+                Klockee
               </Text>
 
               <Text style={styles.brandSubtitle}>
