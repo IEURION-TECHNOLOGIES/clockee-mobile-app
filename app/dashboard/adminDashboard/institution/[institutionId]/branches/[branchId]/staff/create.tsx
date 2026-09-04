@@ -25,6 +25,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import {
   assignStaffToBranchByAdmin,
+  assignStaffToShiftByAdmin,
+  createShiftByAdmin,
   createStaffByAdmin,
 } from "@/services/superAdminServices";
 
@@ -41,12 +43,33 @@ const ERROR = "#DC2626";
 
 /* ================= TYPES ================= */
 
+type EmploymentType = "full-time" | "part-time";
+
+type WeekDay =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+type DaySchedule = {
+  enabled: boolean;
+  startTime: string;
+  endTime: string;
+};
+
+type StaffSchedule = Record<WeekDay, DaySchedule>;
+
 type FormState = {
   name: string;
   email: string;
   departmentOrUnit: string;
   studentOrStaffId: string;
   password: string;
+  employmentType: EmploymentType;
+  schedule: StaffSchedule;
 };
 
 type FieldName =
@@ -68,6 +91,88 @@ type FieldProps = {
   rightIcon?: keyof typeof Ionicons.glyphMap;
   onRightIconPress?: () => void;
 };
+
+/* ================= CONSTANTS ================= */
+
+const weekDays: {
+  key: WeekDay;
+  label: string;
+  apiLabel: string;
+}[] = [
+  {
+    key: "monday",
+    label: "Monday",
+    apiLabel: "Mon",
+  },
+  {
+    key: "tuesday",
+    label: "Tuesday",
+    apiLabel: "Tue",
+  },
+  {
+    key: "wednesday",
+    label: "Wednesday",
+    apiLabel: "Wed",
+  },
+  {
+    key: "thursday",
+    label: "Thursday",
+    apiLabel: "Thu",
+  },
+  {
+    key: "friday",
+    label: "Friday",
+    apiLabel: "Fri",
+  },
+  {
+    key: "saturday",
+    label: "Saturday",
+    apiLabel: "Sat",
+  },
+  {
+    key: "sunday",
+    label: "Sunday",
+    apiLabel: "Sun",
+  },
+];
+
+const createDefaultSchedule = (): StaffSchedule => ({
+  monday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  tuesday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  wednesday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  thursday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  friday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  saturday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  sunday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+});
 
 /* ================= SCREEN ================= */
 
@@ -108,28 +213,23 @@ export default function CreateStaff() {
     getParam(params.branchName) ||
     "Selected branch";
 
-  const [form, setForm] =
-    useState<FormState>({
-      name: "",
-      email: "",
-      departmentOrUnit: "",
-      studentOrStaffId: "",
-      password: "",
-    });
+  const [form, setForm] = useState<FormState>({
+    name: "",
+    email: "",
+    departmentOrUnit: "",
+    studentOrStaffId: "",
+    password: "",
+    employmentType: "full-time",
+    schedule: createDefaultSchedule(),
+  });
 
-  const [fieldErrors, setFieldErrors] =
-    useState<
-      Partial<Record<FieldName, string>>
-    >({});
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<FieldName, string>>
+  >({});
 
-  const [error, setError] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [showPassword, setShowPassword] =
-    useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const canSubmit =
     Boolean(institutionId) &&
@@ -137,15 +237,15 @@ export default function CreateStaff() {
     !loading;
 
   const completion = useMemo(() => {
-    const fields = Object.values(form);
+    const fields = Object.values(form).filter(
+      (_, key) => key !== "schedule"
+    );
 
     const completed = fields.filter(
-      (value) => value.trim().length > 0
+      (value) => typeof value === "string" && value.trim().length > 0
     ).length;
 
-    return Math.round(
-      (completed / fields.length) * 100
-    );
+    return Math.round((completed / fields.length) * 100);
   }, [form]);
 
   console.log(
@@ -176,56 +276,83 @@ export default function CreateStaff() {
     }));
   };
 
+  const updateEmploymentType = (employmentType: EmploymentType) => {
+    setForm((previous) => ({
+      ...previous,
+      employmentType,
+    }));
+
+    setError("");
+  };
+
+  const updateScheduleField = (
+    day: WeekDay,
+    field: keyof DaySchedule,
+    value: string
+  ) => {
+    setForm((previous) => ({
+      ...previous,
+      schedule: {
+        ...previous.schedule,
+        [day]: {
+          ...previous.schedule[day],
+          [field]: value,
+        },
+      },
+    }));
+
+    setError("");
+  };
+
+  const toggleDay = (day: WeekDay) => {
+    setForm((previous) => ({
+      ...previous,
+      schedule: {
+        ...previous.schedule,
+        [day]: {
+          ...previous.schedule[day],
+          enabled: !previous.schedule[day].enabled,
+        },
+      },
+    }));
+
+    setError("");
+  };
+
   const validateForm = () => {
-    const nextErrors: Partial<
-      Record<FieldName, string>
-    > = {};
+    const nextErrors: Partial<Record<FieldName, string>> = {};
 
     if (!form.name.trim()) {
-      nextErrors.name =
-        "Enter the staff member's full name.";
+      nextErrors.name = "Enter the staff member's full name.";
     }
 
     if (!form.email.trim()) {
-      nextErrors.email =
-        "Enter an email address.";
-    } else if (
-      !/\S+@\S+\.\S+/.test(
-        form.email.trim()
-      )
-    ) {
-      nextErrors.email =
-        "Enter a valid email address.";
+      nextErrors.email = "Enter an email address.";
+    } else if (!/\S+@\S+\.\S+/.test(form.email.trim())) {
+      nextErrors.email = "Enter a valid email address.";
     }
 
     if (!form.departmentOrUnit.trim()) {
-      nextErrors.departmentOrUnit =
-        "Enter a department or unit.";
+      nextErrors.departmentOrUnit = "Enter a department or unit.";
     }
 
     if (!form.studentOrStaffId.trim()) {
-      nextErrors.studentOrStaffId =
-        "Enter a staff ID.";
+      nextErrors.studentOrStaffId = "Enter a staff ID.";
     }
 
     if (!form.password) {
-      nextErrors.password =
-        "Create a temporary password.";
+      nextErrors.password = "Create a temporary password.";
     } else if (form.password.length < 6) {
       nextErrors.password =
         "Password must contain at least 6 characters.";
     }
 
     if (!institutionId) {
-      setError(
-        "Institution information is missing."
-      );
+      setError("Institution information is missing.");
     }
 
     if (!branchId) {
-      setError(
-        "Branch information is missing."
-      );
+      setError("Branch information is missing.");
     }
 
     setFieldErrors(nextErrors);
@@ -237,8 +364,109 @@ export default function CreateStaff() {
     );
   };
 
+  /* ================= SHIFT HELPERS ================= */
+
+  const isValidTime = (time: string) => {
+    const timeParts = time.split(":");
+
+    if (timeParts.length !== 2) {
+      return false;
+    }
+
+    const hours = Number(timeParts[0]);
+    const minutes = Number(timeParts[1]);
+
+    return (
+      Number.isInteger(hours) &&
+      Number.isInteger(minutes) &&
+      hours >= 0 &&
+      hours <= 23 &&
+      minutes >= 0 &&
+      minutes <= 59
+    );
+  };
+
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const validateSchedule = () => {
+    if (form.employmentType === "full-time") {
+      return "";
+    }
+
+    const selectedDays = weekDays.filter(
+      (day) => form.schedule[day.key].enabled
+    );
+
+    if (selectedDays.length === 0) {
+      return "Please select at least one part-time working day.";
+    }
+
+    for (const day of selectedDays) {
+      const currentDay = form.schedule[day.key];
+
+      if (!isValidTime(currentDay.startTime)) {
+        return `${day.label}: enter a valid start time using HH:mm.`;
+      }
+
+      if (!isValidTime(currentDay.endTime)) {
+        return `${day.label}: enter a valid end time using HH:mm.`;
+      }
+
+      const startMinutes = timeToMinutes(currentDay.startTime);
+      const endMinutes = timeToMinutes(currentDay.endTime);
+
+      if (endMinutes <= startMinutes) {
+        return `${day.label}: end time must be later than start time.`;
+      }
+    }
+
+    return "";
+  };
+
+  const getSelectedScheduleDays = () => {
+    return weekDays.filter((day) => form.schedule[day.key].enabled);
+  };
+
+  const getShiftTimeRange = () => {
+    const selectedDays = getSelectedScheduleDays();
+
+    if (selectedDays.length === 0) {
+      return null;
+    }
+
+    const firstDay = form.schedule[selectedDays[0].key];
+
+    const allSameTime = selectedDays.every((day) => {
+      const currentDay = form.schedule[day.key];
+      return (
+        currentDay.startTime === firstDay.startTime &&
+        currentDay.endTime === firstDay.endTime
+      );
+    });
+
+    if (!allSameTime) {
+      return null;
+    }
+
+    return {
+      startTime: firstDay.startTime,
+      endTime: firstDay.endTime,
+    };
+  };
+
+  /* ================= SUBMIT ================= */
+
   const handleSubmit = async () => {
     if (!validateForm()) {
+      return;
+    }
+
+    const scheduleError = validateSchedule();
+    if (scheduleError) {
+      setError(scheduleError);
       return;
     }
 
@@ -253,31 +481,28 @@ export default function CreateStaff() {
       const payload = {
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
-        departmentOrUnit:
-          form.departmentOrUnit.trim(),
-        studentOrStaffId:
-          form.studentOrStaffId.trim(),
+        departmentOrUnit: form.departmentOrUnit.trim(),
+        studentOrStaffId: form.studentOrStaffId.trim(),
         password: form.password,
         role: ["staff"],
+        employmentType: form.employmentType,
       };
 
       console.log(
-        "[CreateStaff] Creating staff:",
+        "📤 [CreateStaff] Creating staff payload:",
         {
-          name: payload.name,
-          email: payload.email,
-          departmentOrUnit:
-            payload.departmentOrUnit,
-          studentOrStaffId:
-            payload.studentOrStaffId,
-          role: payload.role,
+          ...payload,
           institutionId,
           branchId,
         }
       );
 
-      const createResponse =
-        await createStaffByAdmin(payload);
+      const createResponse = await createStaffByAdmin(payload);
+
+      console.log(
+        "📥 [CreateStaff] Staff creation response:",
+        createResponse
+      );
 
       const createdUser =
         createResponse?.data?.user ||
@@ -285,32 +510,227 @@ export default function CreateStaff() {
         createResponse?.data?.data ||
         createResponse?.data;
 
+      console.log(
+        "🔍 [CreateStaff] Extracted createdUser:",
+        createdUser
+      );
+
       if (!createdUser?._id) {
+        console.error(
+          "❌ [CreateStaff] Staff creation failed - no _id:",
+          {
+            createResponse,
+            createdUser,
+          }
+        );
         throw new Error(
           "Staff was created but no user ID was returned."
         );
       }
 
+      const createdUserId = createdUser._id;
+
       console.log(
-        "[CreateStaff] Staff created:",
+        "✅ [CreateStaff] Staff created with ID:",
         {
-          staffId: createdUser._id,
+          staffId: createdUserId,
           name: createdUser.name,
         }
       );
 
       await assignStaffToBranchByAdmin(
         institutionId,
-        createdUser._id,
+        createdUserId,
         branchId
       );
 
       console.log(
-        "[CreateStaff] Staff assigned successfully:",
+        "✅ [CreateStaff] Staff assigned to branch:",
         {
-          staffId: createdUser._id,
+          staffId: createdUserId,
           branchId,
         }
+      );
+
+      /*
+       * Full-time staff:
+       * No shift is created. They follow branch rules.
+       */
+
+      if (form.employmentType === "part-time") {
+        const selectedDays = getSelectedScheduleDays();
+        const repeatDays = selectedDays.map((day) => day.apiLabel);
+        const shiftTimeRange = getShiftTimeRange();
+
+        console.log("🕐 [CreateStaff] Part-time shift config:", {
+          selectedDays,
+          repeatDays,
+          shiftTimeRange,
+        });
+
+        if (shiftTimeRange) {
+          /*
+           * All selected days use the same time range,
+           * so one shift is enough.
+           */
+          const shiftPayload = {
+            name: `${form.name.trim()} Part-time Shift`,
+            startTime: shiftTimeRange.startTime,
+            endTime: shiftTimeRange.endTime,
+            gracePeriod: 10,
+            branchId: branchId!,
+            repeatDays,
+          };
+
+          console.log(
+            "📤 [CreateStaff] Creating shift payload:",
+            shiftPayload
+          );
+
+          const shiftResponse = await createShiftByAdmin(shiftPayload);
+
+          console.log(
+            "📥 [CreateStaff] Shift response:",
+            shiftResponse
+          );
+
+          // ✅ FIXED: Backend returns { data: { data: {...} } }
+          const createdShift = shiftResponse?.data?.data;
+
+          console.log(
+            "🔍 [CreateStaff] Extracted createdShift:",
+            createdShift
+          );
+
+          if (!createdShift?._id) {
+            console.error(
+              "❌ [CreateStaff] Shift creation failed - no _id:",
+              {
+                shiftResponse,
+                createdShift,
+              }
+            );
+            throw new Error(
+              "Staff was created, but the part-time shift was not created."
+            );
+          }
+
+          console.log(
+            "✅ [CreateStaff] Shift created with ID:",
+            createdShift._id
+          );
+
+          await assignStaffToShiftByAdmin(
+            createdShift._id,
+            [createdUserId]
+          );
+
+          console.log(
+            "✅ [CreateStaff] Staff assigned to shift:",
+            createdShift._id
+          );
+        } else {
+          /*
+           * Different days have different times.
+           * Create one shift per unique time range.
+           */
+          const shiftGroups = new Map<
+            string,
+            {
+              startTime: string;
+              endTime: string;
+              repeatDays: string[];
+            }
+          >();
+
+          selectedDays.forEach((day) => {
+            const currentDay = form.schedule[day.key];
+
+            const groupKey = `${currentDay.startTime}-${currentDay.endTime}`;
+
+            const existingGroup = shiftGroups.get(groupKey);
+
+            if (existingGroup) {
+              existingGroup.repeatDays.push(day.apiLabel);
+            } else {
+              shiftGroups.set(groupKey, {
+                startTime: currentDay.startTime,
+                endTime: currentDay.endTime,
+                repeatDays: [day.apiLabel],
+              });
+            }
+          });
+
+          console.log(
+            "🔄 [CreateStaff] Shift groups:",
+            Array.from(shiftGroups.entries())
+          );
+
+          for (const [groupKey, shiftGroup] of shiftGroups.entries()) {
+            console.log(
+              "📤 [CreateStaff] Creating shift group payload:",
+              {
+                groupKey,
+                shiftGroup,
+              }
+            );
+
+            const shiftResponse = await createShiftByAdmin({
+              name: `${form.name.trim()} Part-time Shift`,
+              startTime: shiftGroup.startTime,
+              endTime: shiftGroup.endTime,
+              gracePeriod: 10,
+              branchId: branchId!,
+              repeatDays: shiftGroup.repeatDays,
+            });
+
+            console.log(
+              "📥 [CreateStaff] Shift group response:",
+              shiftResponse
+            );
+
+            // ✅ FIXED: Backend returns { data: { data: {...} } }
+            const createdShift = shiftResponse?.data?.data;
+
+            console.log(
+              "🔍 [CreateStaff] Extracted createdShift:",
+              createdShift
+            );
+
+            if (!createdShift?._id) {
+              console.error(
+                "❌ [CreateStaff] Shift group creation failed - no _id:",
+                {
+                  groupKey,
+                  shiftResponse,
+                  createdShift,
+                }
+              );
+              throw new Error(
+                "Staff was created, but one of the part-time shifts was not created."
+              );
+            }
+
+            console.log(
+              "✅ [CreateStaff] Shift group created with ID:",
+              createdShift._id
+            );
+
+            await assignStaffToShiftByAdmin(
+              createdShift._id,
+              [createdUserId]
+            );
+
+            console.log(
+              "✅ [CreateStaff] Staff assigned to shift group:",
+              createdShift._id
+            );
+          }
+        }
+      }
+
+      console.log(
+        "✅ [CreateStaff] Staff and schedule created successfully."
       );
 
       Alert.alert(
@@ -334,13 +754,12 @@ export default function CreateStaff() {
       );
     } catch (submitError: any) {
       console.error(
-        "[CreateStaff] Failed:",
+        "❌ [CreateStaff] Failed:",
         {
           message: submitError?.message,
-          status:
-            submitError?.response?.status,
-          response:
-            submitError?.response?.data,
+          status: submitError?.response?.status,
+          data: submitError?.response?.data,
+          fullError: submitError,
         }
       );
 
@@ -355,17 +774,10 @@ export default function CreateStaff() {
     }
   };
 
-  if (
-    authLoading ||
-    !authInitialized ||
-    profileLoading
-  ) {
+  if (authLoading || !authInitialized || profileLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator
-          size="large"
-          color={PRIMARY}
-        />
+        <ActivityIndicator size="large" color={PRIMARY} />
 
         <Text style={styles.loadingText}>
           Preparing staff form...
@@ -380,11 +792,7 @@ export default function CreateStaff() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={
-          Platform.OS === "ios"
-            ? "padding"
-            : undefined
-        }
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.screen}>
           {/* HEADER */}
@@ -395,21 +803,13 @@ export default function CreateStaff() {
               onPress={() => router.back()}
               hitSlop={10}
             >
-              <Ionicons
-                name="arrow-back"
-                size={22}
-                color={TEXT}
-              />
+              <Ionicons name="arrow-back" size={22} color={TEXT} />
             </Pressable>
 
             <View style={styles.headerText}>
-              <Text style={styles.eyebrow}>
-                STAFF MANAGEMENT
-              </Text>
+              <Text style={styles.eyebrow}>STAFF MANAGEMENT</Text>
 
-              <Text style={styles.headerTitle}>
-                Add staff member
-              </Text>
+              <Text style={styles.headerTitle}>Add staff member</Text>
             </View>
 
             <View style={styles.headerIcon}>
@@ -424,29 +824,19 @@ export default function CreateStaff() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={
-              styles.content
-            }
+            contentContainerStyle={styles.content}
           >
             {/* INTRO */}
 
             <View style={styles.introCard}>
               <View style={styles.introIcon}>
-                <Ionicons
-                  name="people-outline"
-                  size={25}
-                  color={PRIMARY}
-                />
+                <Ionicons name="people-outline" size={25} color={PRIMARY} />
               </View>
 
               <View style={styles.introText}>
-                <Text style={styles.introTitle}>
-                  Create a team account
-                </Text>
+                <Text style={styles.introTitle}>Create a team account</Text>
 
-                <Text
-                  style={styles.introDescription}
-                >
+                <Text style={styles.introDescription}>
                   Add a staff member and assign them to the selected branch.
                 </Text>
               </View>
@@ -464,13 +854,9 @@ export default function CreateStaff() {
               </View>
 
               <View style={styles.branchText}>
-                <Text style={styles.branchLabel}>
-                  ASSIGNING TO
-                </Text>
+                <Text style={styles.branchLabel}>ASSIGNING TO</Text>
 
-                <Text style={styles.branchName}>
-                  {branchName}
-                </Text>
+                <Text style={styles.branchName}>{branchName}</Text>
 
                 <Text style={styles.branchId}>
                   Branch ID: {branchId || "Missing"}
@@ -478,37 +864,156 @@ export default function CreateStaff() {
               </View>
 
               <View style={styles.assignedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={16}
-                  color="#047857"
-                />
+                <Ionicons name="checkmark-circle" size={16} color="#047857" />
 
-                <Text style={styles.assignedText}>
-                  Ready
-                </Text>
+                <Text style={styles.assignedText}>Ready</Text>
               </View>
             </View>
+
+            {/* EMPLOYMENT TYPE */}
+
+            <View style={styles.employmentCard}>
+              <Text style={styles.employmentLabel}>Employment type</Text>
+
+              <View style={styles.employmentOptions}>
+                <Pressable
+                  style={[
+                    styles.employmentOption,
+                    form.employmentType === "full-time" &&
+                      styles.employmentOptionActive,
+                  ]}
+                  onPress={() => updateEmploymentType("full-time")}
+                >
+                  <Text
+                    style={[
+                      styles.employmentOptionText,
+                      form.employmentType === "full-time" &&
+                        styles.employmentOptionTextActive,
+                    ]}
+                  >
+                    Full-time
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.employmentOption,
+                    form.employmentType === "part-time" &&
+                      styles.employmentOptionActive,
+                  ]}
+                  onPress={() => updateEmploymentType("part-time")}
+                >
+                  <Text
+                    style={[
+                      styles.employmentOptionText,
+                      form.employmentType === "part-time" &&
+                        styles.employmentOptionTextActive,
+                    ]}
+                  >
+                    Part-time
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* SCHEDULE (Part-time only) */}
+
+            {form.employmentType === "part-time" && (
+              <View style={styles.scheduleCard}>
+                <Text style={styles.scheduleTitle}>Working days</Text>
+
+                <Text style={styles.scheduleSubtitle}>
+                  Select the days this staff member will work.
+                </Text>
+
+                {weekDays.map((day) => {
+                  const daySchedule = form.schedule[day.key];
+
+                  return (
+                    <View key={day.key} style={styles.dayRow}>
+                      <Pressable
+                        style={[
+                          styles.dayToggle,
+                          daySchedule.enabled && styles.dayToggleActive,
+                        ]}
+                        onPress={() => toggleDay(day.key)}
+                      >
+                        <Ionicons
+                          name={
+                            daySchedule.enabled
+                              ? "checkmark-circle"
+                              : "ellipse-outline"
+                          }
+                          size={20}
+                          color={
+                            daySchedule.enabled ? "#FFFFFF" : PRIMARY
+                          }
+                        />
+
+                        <Text
+                          style={[
+                            styles.dayLabel,
+                            daySchedule.enabled && styles.dayLabelActive,
+                          ]}
+                        >
+                          {day.label}
+                        </Text>
+                      </Pressable>
+
+                      {daySchedule.enabled && (
+                        <View style={styles.dayTimes}>
+                          <TextInput
+                            style={styles.timeInput}
+                            value={daySchedule.startTime}
+                            onChangeText={(value) =>
+                              updateScheduleField(
+                                day.key,
+                                "startTime",
+                                value
+                              )
+                            }
+                            placeholder="08:00"
+                            keyboardType="numeric"
+                            maxLength={5}
+                          />
+
+                          <Text style={styles.timeSeparator}>to</Text>
+
+                          <TextInput
+                            style={styles.timeInput}
+                            value={daySchedule.endTime}
+                            onChangeText={(value) =>
+                              updateScheduleField(
+                                day.key,
+                                "endTime",
+                                value
+                              )
+                            }
+                            placeholder="17:00"
+                            keyboardType="numeric"
+                            maxLength={5}
+                          />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
             {/* PROGRESS */}
 
             <View style={styles.progressHeader}>
-              <Text style={styles.progressLabel}>
-                Form completion
-              </Text>
+              <Text style={styles.progressLabel}>Form completion</Text>
 
-              <Text style={styles.progressValue}>
-                {completion}%
-              </Text>
+              <Text style={styles.progressValue}>{completion}%</Text>
             </View>
 
             <View style={styles.progressTrack}>
               <View
                 style={[
                   styles.progressFill,
-                  {
-                    width: `${completion}%`,
-                  },
+                  { width: `${completion}%` },
                 ]}
               />
             </View>
@@ -516,9 +1021,7 @@ export default function CreateStaff() {
             {/* FORM */}
 
             <View style={styles.formCard}>
-              <Text style={styles.formTitle}>
-                Staff information
-              </Text>
+              <Text style={styles.formTitle}>Staff information</Text>
 
               <Text style={styles.formSubtitle}>
                 Enter the staff member's account details.
@@ -529,9 +1032,7 @@ export default function CreateStaff() {
                 placeholder="e.g. Sarah Johnson"
                 icon="person-outline"
                 value={form.name}
-                onChangeText={(value) =>
-                  updateField("name", value)
-                }
+                onChangeText={(value) => updateField("name", value)}
                 error={fieldErrors.name}
               />
 
@@ -541,9 +1042,7 @@ export default function CreateStaff() {
                 icon="mail-outline"
                 value={form.email}
                 keyboardType="email-address"
-                onChangeText={(value) =>
-                  updateField("email", value)
-                }
+                onChangeText={(value) => updateField("email", value)}
                 error={fieldErrors.email}
               />
 
@@ -553,14 +1052,9 @@ export default function CreateStaff() {
                 icon="briefcase-outline"
                 value={form.departmentOrUnit}
                 onChangeText={(value) =>
-                  updateField(
-                    "departmentOrUnit",
-                    value
-                  )
+                  updateField("departmentOrUnit", value)
                 }
-                error={
-                  fieldErrors.departmentOrUnit
-                }
+                error={fieldErrors.departmentOrUnit}
               />
 
               <Field
@@ -569,14 +1063,9 @@ export default function CreateStaff() {
                 icon="card-outline"
                 value={form.studentOrStaffId}
                 onChangeText={(value) =>
-                  updateField(
-                    "studentOrStaffId",
-                    value
-                  )
+                  updateField("studentOrStaffId", value)
                 }
-                error={
-                  fieldErrors.studentOrStaffId
-                }
+                error={fieldErrors.studentOrStaffId}
               />
 
               <Field
@@ -585,19 +1074,13 @@ export default function CreateStaff() {
                 icon="lock-closed-outline"
                 value={form.password}
                 secureTextEntry={!showPassword}
-                onChangeText={(value) =>
-                  updateField("password", value)
-                }
+                onChangeText={(value) => updateField("password", value)}
                 error={fieldErrors.password}
                 rightIcon={
-                  showPassword
-                    ? "eye-off-outline"
-                    : "eye-outline"
+                  showPassword ? "eye-off-outline" : "eye-outline"
                 }
                 onRightIconPress={() =>
-                  setShowPassword(
-                    (previous) => !previous
-                  )
+                  setShowPassword((previous) => !previous)
                 }
               />
             </View>
@@ -614,12 +1097,11 @@ export default function CreateStaff() {
               </View>
 
               <View style={styles.roleText}>
-                <Text style={styles.roleTitle}>
-                  Staff access
-                </Text>
+                <Text style={styles.roleTitle}>Staff access</Text>
 
                 <Text style={styles.roleDescription}>
-                  This account will be created with staff permissions and will not have admin access.
+                  This account will be created with staff permissions and
+                  will not have admin access.
                 </Text>
               </View>
             </View>
@@ -632,9 +1114,7 @@ export default function CreateStaff() {
                   color={ERROR}
                 />
 
-                <Text style={styles.errorText}>
-                  {error}
-                </Text>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
 
@@ -647,17 +1127,13 @@ export default function CreateStaff() {
             <Pressable
               style={[
                 styles.submitButton,
-                !canSubmit &&
-                  styles.submitButtonDisabled,
+                !canSubmit && styles.submitButtonDisabled,
               ]}
               onPress={handleSubmit}
               disabled={!canSubmit}
             >
               {loading ? (
-                <ActivityIndicator
-                  size="small"
-                  color="#FFFFFF"
-                />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
                   <Ionicons
@@ -701,9 +1177,7 @@ function Field({
 }: FieldProps) {
   return (
     <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>
-        {label}
-      </Text>
+      <Text style={styles.fieldLabel}>{label}</Text>
 
       <View
         style={[
@@ -737,29 +1211,19 @@ function Field({
             onPress={onRightIconPress}
             hitSlop={8}
           >
-            <Ionicons
-              name={rightIcon}
-              size={20}
-              color={MUTED}
-            />
+            <Ionicons name={rightIcon} size={20} color={MUTED} />
           </Pressable>
         )}
       </View>
 
-      {error && (
-        <Text style={styles.fieldError}>
-          {error}
-        </Text>
-      )}
+      {error && <Text style={styles.fieldError}>{error}</Text>}
     </View>
   );
 }
 
 /* ================= HELPERS ================= */
 
-function getParam(
-  value?: string | string[]
-) {
+function getParam(value?: string | string[]) {
   if (Array.isArray(value)) {
     return value[0];
   }
@@ -948,6 +1412,129 @@ const styles = StyleSheet.create({
     color: "#047857",
     fontSize: 9,
     fontWeight: "900",
+  },
+
+  employmentCard: {
+    marginTop: 19,
+    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 20,
+  },
+
+  employmentLabel: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+
+  employmentOptions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  employmentOption: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+
+  employmentOptionActive: {
+    backgroundColor: PRIMARY_SOFT,
+    borderColor: PRIMARY,
+  },
+
+  employmentOptionText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  employmentOptionTextActive: {
+    color: PRIMARY_DARK,
+    fontWeight: "900",
+  },
+
+  scheduleCard: {
+    marginTop: 15,
+    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 20,
+  },
+
+  scheduleTitle: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  scheduleSubtitle: {
+    marginTop: 4,
+    marginBottom: 14,
+    color: MUTED,
+    fontSize: 11,
+  },
+
+  dayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+  },
+
+  dayToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  dayToggleActive: {
+    opacity: 1,
+  },
+
+  dayLabel: {
+    marginLeft: 8,
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  dayLabelActive: {
+    color: TEXT,
+    fontWeight: "700",
+  },
+
+  dayTimes: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  timeInput: {
+    width: 60,
+    height: 36,
+    paddingHorizontal: 8,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 8,
+    color: TEXT,
+    fontSize: 12,
+    textAlign: "center",
+  },
+
+  timeSeparator: {
+    color: MUTED,
+    fontSize: 11,
   },
 
   progressHeader: {

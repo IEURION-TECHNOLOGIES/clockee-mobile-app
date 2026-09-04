@@ -18,6 +18,12 @@ import {
   removeToken,
 } from "@/utils/token";
 
+import {
+  saveUser,
+  getSavedUser,
+  removeSavedUser,
+} from "@/utils/authStorage";
+
 
 interface AuthContextType {
   user: any | null;
@@ -185,7 +191,10 @@ export const AuthProvider = ({
 
     const initializeAuth =
       async () => {
-        const splashStartTime = Date.now();
+
+        const splashStartTime =
+          Date.now();
+
 
         try {
 
@@ -235,88 +244,237 @@ export const AuthProvider = ({
           /* =================================================
              TOKEN EXISTS
              
-             RESTORE USER SESSION
+             GET SAVED USER
           ================================================= */
 
-          const response =
-            await getProfile();
-
-
-          const userData =
-            extractUserData(
-              response
-            );
-
-
-          console.log(
-            "[AuthProvider] Profile extracted:",
-            userData
-          );
-
-
-          if (!mounted) {
-            return;
-          }
+          const savedUser =
+            await getSavedUser();
 
 
           /* =================================================
-             VALID PROFILE
+             RESTORE SAVED USER
+             
+             This allows the user to remain authenticated
+             even if the phone is temporarily offline.
           ================================================= */
 
-          if (userData) {
-
-            const formattedUser =
-              formatUserData(
-                userData
-              );
-
+          if (
+            savedUser &&
+            mounted
+          ) {
 
             console.log(
-              "[AuthProvider] Restored authenticated user:",
+              "[AuthProvider] Restoring saved user:",
               {
                 id:
-                  formattedUser?.id,
+                  savedUser?.id,
 
                 name:
-                  formattedUser?.name,
+                  savedUser?.name,
 
                 role:
-                  formattedUser?.role,
+                  savedUser?.role,
 
                 dashboardType:
-                  formattedUser?.dashboardType,
+                  savedUser?.dashboardType,
 
                 branchId:
-                  formattedUser?.branchId,
+                  savedUser?.branchId,
               }
             );
 
 
             setUser(
-              formattedUser
+              savedUser
             );
+          }
 
 
-          } else {
+          /* =================================================
+             REFRESH PROFILE FROM SERVER
+          ================================================= */
 
-            /* ===============================================
-               INVALID TOKEN
-            =============================================== */
+          try {
+
+            const response =
+              await getProfile();
+
+
+            const userData =
+              extractUserData(
+                response
+              );
+
 
             console.log(
-              "[AuthProvider] Invalid profile - removing token"
+              "[AuthProvider] Profile extracted:",
+              userData
             );
 
 
-            await removeToken();
+            /* =============================================
+               VALID PROFILE
+            ============================================= */
+
+            if (userData) {
+
+              const formattedUser =
+                formatUserData(
+                  userData
+                );
 
 
-            if (!mounted) {
-              return;
+              if (!formattedUser) {
+                throw new Error(
+                  "Unable to format authenticated user"
+                );
+              }
+
+
+              /*
+               * Save the newest user information locally.
+               */
+              await saveUser(
+                formattedUser
+              );
+
+
+              if (!mounted) {
+                return;
+              }
+
+
+              setUser(
+                formattedUser
+              );
+
+
+              console.log(
+                "[AuthProvider] Authenticated user restored:",
+                {
+                  id:
+                    formattedUser?.id,
+
+                  name:
+                    formattedUser?.name,
+
+                  role:
+                    formattedUser?.role,
+
+                  dashboardType:
+                    formattedUser?.dashboardType,
+
+                  branchId:
+                    formattedUser?.branchId,
+                }
+              );
+
+            } else {
+
+              /*
+               * Profile request succeeded but returned
+               * no usable user.
+               *
+               * Do NOT automatically delete the token here.
+               *
+               * If a saved user exists, keep the session.
+               */
+
+              console.warn(
+                "[AuthProvider] Profile returned no user - keeping saved session"
+              );
+
+
+              if (
+                savedUser &&
+                mounted
+              ) {
+
+                setUser(
+                  savedUser
+                );
+
+              }
+
             }
 
 
-            setUser(null);
+          } catch (profileError: any) {
+
+            const status =
+              profileError?.response?.status;
+
+
+            console.error(
+              "[AuthProvider] Profile refresh failed:",
+              status,
+              profileError?.response?.data ||
+                profileError?.message ||
+                profileError
+            );
+
+
+            /* =============================================
+               REAL AUTHENTICATION FAILURE
+               
+               Only 401 removes the session.
+            ============================================= */
+
+            if (
+              status === 401
+            ) {
+
+              console.log(
+                "[AuthProvider] Token is unauthorized - clearing session"
+              );
+
+
+              try {
+
+                await removeToken();
+
+                await removeSavedUser();
+
+              } catch (removeError) {
+
+                console.error(
+                  "[AuthProvider] Failed clearing invalid session:",
+                  removeError
+                );
+              }
+
+
+              if (!mounted) {
+                return;
+              }
+
+
+              setUser(null);
+
+
+            } else {
+
+              /* ===========================================
+                 NETWORK / SERVER / TIMEOUT ERROR
+                 
+                 KEEP USER LOGGED IN.
+              =========================================== */
+
+              console.log(
+                "[AuthProvider] Server/network problem - keeping saved session"
+              );
+
+
+              if (
+                savedUser &&
+                mounted
+              ) {
+
+                setUser(
+                  savedUser
+                );
+              }
+            }
           }
 
 
@@ -331,37 +489,37 @@ export const AuthProvider = ({
           );
 
 
-          /* ===============================================
-             INVALID TOKEN
-          =============================================== */
-
-          if (
-            error?.response?.status ===
-            401
-          ) {
-
-            try {
-
-              await removeToken();
-
-            } catch (
-              removeError
-            ) {
-
-              console.error(
-                "[AuthProvider] Failed removing invalid token:",
-                removeError
-              );
-            }
-          }
-
+          /*
+           * Do not automatically log the user out for
+           * unexpected startup errors.
+           *
+           * The saved token/user remain intact.
+           */
 
           if (!mounted) {
             return;
           }
 
 
-          setUser(null);
+          const savedUser =
+            await getSavedUser();
+
+
+          if (savedUser) {
+
+            console.log(
+              "[AuthProvider] Unexpected startup error - restoring saved session"
+            );
+
+
+            setUser(
+              savedUser
+            );
+
+          } else {
+
+            setUser(null);
+          }
 
 
         } finally {
@@ -376,18 +534,37 @@ export const AuthProvider = ({
           =============================================== */
 
           const elapsed =
-            Date.now() - splashStartTime;
+            Date.now() -
+            splashStartTime;
+
 
           const remainingTime =
-            Math.max(0, 3000 - elapsed);
+            Math.max(
+              0,
+              3000 - elapsed
+            );
 
-          if (remainingTime > 0) {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, remainingTime);
-            });
+
+          if (
+            remainingTime > 0
+          ) {
+
+            await new Promise<void>(
+              (resolve) => {
+
+                setTimeout(
+                  resolve,
+                  remainingTime
+                );
+              }
+            );
           }
 
-          if (!mounted) return;
+
+          if (!mounted) {
+            return;
+          }
+
 
           setLoading(false);
 
@@ -409,7 +586,9 @@ export const AuthProvider = ({
 
 
     return () => {
+
       mounted = false;
+
     };
 
   }, []);
@@ -476,11 +655,39 @@ export const AuthProvider = ({
         );
 
 
+      if (!cleanUser) {
+
+        throw new Error(
+          "Invalid user data"
+        );
+      }
+
+
       /* ===============================================
          SAVE TOKEN
+         
+         SecureStore persists this across:
+         - app close
+         - app reopen
+         - phone restart
+         - phone power off/on
       =============================================== */
 
-      await saveToken(token);
+      await saveToken(
+        token
+      );
+
+
+      /* ===============================================
+         SAVE USER
+         
+         Used to restore the authenticated UI even
+         when the phone is temporarily offline.
+      =============================================== */
+
+      await saveUser(
+        cleanUser
+      );
 
 
       /* ===============================================
@@ -506,6 +713,9 @@ export const AuthProvider = ({
 
           dashboardType:
             cleanUser?.dashboardType,
+
+          branchId:
+            cleanUser?.branchId,
         }
       );
 
@@ -517,11 +727,13 @@ export const AuthProvider = ({
 
       setLoading(false);
 
+
       /**
        * Login is NOT an app restart.
        *
        * Therefore don't show startup splash.
        */
+
       setInitialized(true);
 
       setIsReady(true);
@@ -542,18 +754,31 @@ export const AuthProvider = ({
       setLoading(true);
 
 
+      /* ===============================================
+         REMOVE AUTH TOKEN
+      =============================================== */
+
       await removeToken();
 
 
-      /**
-       * Clear cached application data.
-       */
+      /* ===============================================
+         REMOVE SAVED USER
+      =============================================== */
+
+      await removeSavedUser();
+
+
+      /* ===============================================
+         CLEAR CACHED APPLICATION DATA
+      =============================================== */
+
       queryClient.clear();
 
 
-      /**
-       * Remove current authenticated user.
-       */
+      /* ===============================================
+         REMOVE CURRENT AUTHENTICATED USER
+      =============================================== */
+
       setUser(null);
 
 
@@ -574,13 +799,13 @@ export const AuthProvider = ({
 
       setLoading(false);
 
+
       /**
-       * IMPORTANT:
-       *
        * Logout is NOT startup.
        *
        * Therefore don't show splash.
        */
+
       setIsInitializing(false);
 
       setIsReady(true);
@@ -598,11 +823,17 @@ export const AuthProvider = ({
     <AuthContext.Provider
       value={{
         user,
+
         loading,
+
         initialized,
+
         isInitializing,
+
         isReady,
+
         login,
+
         logout,
       }}
     >
@@ -631,4 +862,4 @@ export const useAuth = () => {
 
 
   return context;
-};
+}

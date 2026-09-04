@@ -35,6 +35,7 @@ type Props = {
   onResetPassword?: () => Promise<any>;
   onLogout?: () => Promise<any>;
   onToggleRemote?: () => Promise<any>;
+  onManualOverride?: () => void;
 };
 
 export default function UserActionModal({
@@ -51,6 +52,7 @@ export default function UserActionModal({
   onResetPassword,
   onLogout,
   onToggleRemote,
+  onManualOverride,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -90,9 +92,20 @@ export default function UserActionModal({
       label: remoteAccess
         ? "Disable Remote Clocking"
         : "Enable Remote Clocking",
-      icon: remoteAccess ? "cloud-offline-outline" : "wifi",
+      icon: remoteAccess
+        ? "cloud-offline-outline"
+        : "wifi",
       color: remoteAccess ? "#DC2626" : "#0284C7",
       handler: onToggleRemote,
+    },
+
+    // Manual override
+    {
+      key: "override" as const,
+      label: "Manual override",
+      icon: "time-outline",
+      color: "#EA580C",
+      handler: onManualOverride,
     },
 
     // {
@@ -131,6 +144,7 @@ export default function UserActionModal({
   const executeAction = useCallback(
     async (handler?: () => Promise<any>) => {
       if (!handler) return;
+
       try {
         setLoading(true);
         await handler();
@@ -149,12 +163,18 @@ export default function UserActionModal({
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.overlay}>
         <Animated.View
-          style={[styles.card, { transform: [{ scale: scaleAnim }] }]}
+          style={[
+            styles.card,
+            { transform: [{ scale: scaleAnim }] },
+          ]}
         >
           <Text style={styles.title}>User Actions</Text>
 
           {loading ? (
-            <ActivityIndicator size="large" color="#0284C7" />
+            <ActivityIndicator
+              size="large"
+              color="#0284C7"
+            />
           ) : (
             <>
               {actions.map(
@@ -163,15 +183,21 @@ export default function UserActionModal({
                     <TouchableOpacity
                       key={action.key}
                       style={styles.actionBtn}
-                      onPress={() => executeAction(action.handler)}
+                      onPress={() =>
+                        executeAction(action.handler)
+                      }
                     >
                       <Ionicons
                         name={action.icon as any}
                         size={20}
                         color={action.color}
                       />
+
                       <Text
-                        style={[styles.actionText, { color: action.color }]}
+                        style={[
+                          styles.actionText,
+                          { color: action.color },
+                        ]}
                       >
                         {action.label}
                       </Text>
@@ -180,7 +206,9 @@ export default function UserActionModal({
               )}
 
               <TouchableOpacity onPress={onClose}>
-                <Text style={styles.cancel}>Cancel</Text>
+                <Text style={styles.cancel}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </>
           )}
@@ -197,17 +225,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 20,
     padding: 24,
   },
+
   title: {
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 20,
     textAlign: "center",
   },
+
   actionBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -216,10 +247,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
+
   actionText: {
     fontSize: 16,
     fontWeight: "600",
   },
+
   cancel: {
     textAlign: "center",
     marginTop: 16,

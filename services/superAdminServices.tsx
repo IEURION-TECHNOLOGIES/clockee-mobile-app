@@ -1,43 +1,76 @@
 import API from "@/api/baseUrl";
 
 /* ================= REGISTER & CREATE ================= */
-export const registerAdmin = (data: any) => API.post("/admin/register", data);
 
-export const createAdmin = (institutionId: string, data: any) =>
-  API.post(`/admin/create/${institutionId}/admin`, data);
+export const registerAdmin = (data: any) =>
+  API.post("/admin/register", data);
+
+export const createAdmin = (
+  institutionId: string,
+  data: any
+) =>
+  API.post(
+    `/admin/create/${institutionId}/admin`,
+    data
+  );
 
 export const createAdminByOwner = (data: any) =>
-  API.post(`/admin/create/admin`, data);
+  API.post("/admin/create/admin", data);
 
-export const createStaff = (institutionId: string, data: any) =>
-  API.post(`/admin/institutions/${institutionId}/staff`, data);
+export const createStaff = (
+  institutionId: string,
+  data: any
+) =>
+  API.post(
+    `/admin/institutions/${institutionId}/staff`,
+    data
+  );
 
 export const createStaffByAdmin = (data: any) =>
-  API.post(`/admin/institutions/staff`, data);
+  API.post("/admin/institutions/staff", data);
 
 /* ================= GET USERS ================= */
-export const getInstitutions = () => API.get("/admin/institutions");
 
-export const getAdmins = (institutionId: string) =>
-  API.get(`/admin/admins`, { params: { institutionId } });
+export const getInstitutions = () =>
+  API.get("/admin/institutions");
 
-export const getStaffs = () => API.get(`/admin/institution/users`);
-
-export const getStaffByInstitution = (institutionId: string) =>
-  API.get("/admin/institution/users", {
-    params: { id: institutionId, role: "staff" },
+export const getAdmins = (
+  institutionId: string
+) =>
+  API.get("/admin/admins", {
+    params: { institutionId },
   });
 
-export const getAdminByInstitution = (institutionId: string) =>
+export const getStaffs = () =>
+  API.get("/admin/institution/users");
+
+export const getStaffByInstitution = (
+  institutionId: string
+) =>
   API.get("/admin/institution/users", {
-    params: { id: institutionId, role: "admin" },
+    params: {
+      id: institutionId,
+      role: "staff",
+    },
+  });
+
+export const getAdminByInstitution = (
+  institutionId: string
+) =>
+  API.get("/admin/institution/users", {
+    params: {
+      id: institutionId,
+      role: "admin",
+    },
   });
 
 /* ================= SINGLE USER ================= */
+
 export const getSingleUser = (userId: string) =>
   API.get(`/admin/institution/user/${userId}`);
 
 /* ================= USER ACTIONS ================= */
+
 export const allowRemoteClocking = async (
   userId: string,
   institutionId: string,
@@ -49,50 +82,100 @@ export const allowRemoteClocking = async (
   console.log("Allowed:", allowed);
 
   try {
-    const res = await API.patch(`/admin/users/${userId}/remote-access`, {
-      institutionId,
-      allowed,
-    });
+    const response = await API.patch(
+      `/admin/users/${userId}/remote-access`,
+      {
+        institutionId,
+        allowed,
+      }
+    );
 
-    console.log("✅ Remote Clocking Success:", res.data);
-    return res;
+    console.log(
+      "✅ Remote Clocking Success:",
+      response.data
+    );
+
+    return response;
   } catch (error: any) {
-    console.error("❌ Remote Clocking Failed:");
-    console.error("Status:", error.response?.status);
-    console.error("Response Data:", error.response?.data);
-    console.error("Message:", error.response?.data?.message);
+    console.error(
+      "❌ Remote Clocking Failed:"
+    );
+    console.error(
+      "Status:",
+      error.response?.status
+    );
+    console.error(
+      "Response Data:",
+      error.response?.data
+    );
+    console.error(
+      "Message:",
+      error.response?.data?.message
+    );
+
     throw error;
   }
 };
 
-
 export const promoteToAdmin = (userId: string) =>
-  API.patch(`/admin/users/${userId}/promote-admin`);
+  API.patch(
+    `/admin/users/${userId}/promote-admin`
+  );
 
 export const demoteToStaff = (userId: string) =>
-  API.patch(`/admin/users/${userId}/demote-admin`);
+  API.patch(
+    `/admin/users/${userId}/demote-admin`
+  );
 
 export const deactivateUser = (userId: string) =>
-  API.patch(`/admin/users/${userId}/deactivate`);
+  API.patch(
+    `/admin/users/${userId}/deactivate`
+  );
 
 export const reactivateUser = (userId: string) =>
-  API.patch(`/admin/users/${userId}/reactivate`);
+  API.patch(
+    `/admin/users/${userId}/reactivate`
+  );
 
-export const editUser = (userId: string, data: any) =>
-  API.patch(`/admin/users/${userId}/edit`, data);
+export const editUser = (
+  userId: string,
+  data: any
+) =>
+  API.patch(
+    `/admin/users/${userId}/edit`,
+    data
+  );
 
 /* ================= BRANCHES ================= */
+
 export const createBranch = (data: any) =>
-  API.post(`/admin/institution/branches`, data);
+  API.post(
+    "/admin/institution/branches",
+    data
+  );
 
-export const updateBranch = (branchId: string, data: any) =>
-  API.patch(`/admin/institution/branches/update/${branchId}`, data);
+export const updateBranch = (
+  branchId: string,
+  data: any
+) =>
+  API.patch(
+    `/admin/institution/branches/update/${branchId}`,
+    data
+  );
 
-export const getInstitutionBranches = (institutionId: string) =>
-  API.get(`/admin/institution/branches`, { params: { institutionId } });
+export const getInstitutionBranches = (
+  institutionId: string
+) =>
+  API.get("/admin/institution/branches", {
+    params: { institutionId },
+  });
 
-export const getStaffByBranch = (branchId: string) =>
-  API.get(`/admin/institution/branches/${branchId}/staff`);
+export const getStaffByBranch = (
+  branchId: string
+) =>
+  API.get(
+    `/admin/institution/branches/${branchId}/staff`
+  );
 
 export const assignStaffToBranch = (
   institutionId: string,
@@ -101,7 +184,9 @@ export const assignStaffToBranch = (
 ) =>
   API.patch(
     `/admin/institution/branches/${institutionId}/assign-user/${userId}`,
-    { branchId }
+    {
+      branchId,
+    }
   );
 
 export const assignStaffToBranchByAdmin = (
@@ -111,17 +196,182 @@ export const assignStaffToBranchByAdmin = (
 ) =>
   API.patch(
     `/admin/institution/branches/${institutionId}/assign-user/${userId}`,
-    { branchId }
+    {
+      branchId,
+    }
   );
 
-  /* ================= DASHBOARD OVERVIEW ================= */
-export const getDashboardOverview = () => API.get("/admin/dashboard/overview");
+/* ================= SHIFTS ================= */
+
+export type CreateShiftPayload = {
+  name: string;
+  startTime: string;
+  endTime: string;
+  gracePeriod: number;
+  branchId: string;
+  repeatDays: string[];
+};
+
+export type Shift = {
+  _id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  gracePeriod: number;
+  branchId: string;
+  repeatDays: string[];
+  assignedUsers?: Array<{
+    _id?: string;
+    name?: string;
+    role?: string | string[];
+  }>;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateShiftResponse = {
+  success?: boolean;
+  message?: string;
+  data?: Shift | { shift: Shift };
+};
+
+export type AssignStaffToShiftPayload = {
+  userIds: string[];
+};
+
+export type AssignStaffToShiftResponse = {
+  success?: boolean;
+  message?: string;
+  data?: Shift | { shift: Shift };
+};
+
+/**
+ * Create a shift for a branch.
+ *
+ * POST /admin/shifts
+ */
+export const createShiftByAdmin = (
+  data: CreateShiftPayload
+) => {
+  if (!data.name.trim()) {
+    throw new Error(
+      "Shift name is required."
+    );
+  }
+
+  if (!data.startTime.trim()) {
+    throw new Error(
+      "Shift start time is required."
+    );
+  }
+
+  if (!data.endTime.trim()) {
+    throw new Error(
+      "Shift end time is required."
+    );
+  }
+
+  if (!data.branchId.trim()) {
+    throw new Error(
+      "Branch ID is required to create a shift."
+    );
+  }
+
+  if (!data.repeatDays.length) {
+    throw new Error(
+      "At least one repeat day is required."
+    );
+  }
+
+  return API.post<CreateShiftResponse>(
+    "/admin/shifts",
+    data
+  );
+};
+
+
+/* ================= MANUAL OVERRIDE ================= */
+
+export type ManualOverridePayload = {
+  userId: string;
+  actionType: "clock-in" | "clock-out";
+  branchId: string;
+  reason: string;
+};
+
+export type ManualOverrideResponse = {
+  success?: boolean;
+  message?: string;
+  data?: any;
+};
+
+export const manualOverrideClock = (
+  payload: ManualOverridePayload
+) => {
+  if (!payload.userId.trim()) {
+    throw new Error(
+      "User ID is required for manual override."
+    );
+  }
+
+  if (!payload.branchId.trim()) {
+    throw new Error(
+      "Branch ID is required for manual override."
+    );
+  }
+
+  if (!payload.reason.trim()) {
+    throw new Error(
+      "Reason is required for manual override."
+    );
+  }
+
+  return API.post<ManualOverrideResponse>(
+    "/clock/admin/override",
+    payload
+  );
+};
+
+/**
+ * Assign one or more staff members to a shift.
+ *
+ * PATCH /admin/shifts/:id/assign
+ */
+export const assignStaffToShiftByAdmin = (
+  shiftId: string,
+  userIds: string[]
+) => {
+  if (!shiftId.trim()) {
+    throw new Error(
+      "Shift ID is required to assign staff."
+    );
+  }
+
+  if (!userIds.length) {
+    throw new Error(
+      "At least one user ID is required."
+    );
+  }
+
+  return API.patch<AssignStaffToShiftResponse>(
+    `/admin/shifts/${shiftId}/assign`,
+    {
+      userIds,
+    }
+  );
+};
+
+/* ================= DASHBOARD OVERVIEW ================= */
+
+export const getDashboardOverview = () =>
+  API.get("/admin/dashboard/overview");
 
 /* ================= OWNER DASHBOARD OVERVIEW ================= */
-export const getOwnerDashboardOverview = () => 
+
+export const getOwnerDashboardOverview = () =>
   API.get("/admin/owner/dashboard/overview");
 
-
+/* ================= ATTENDANCE TYPES ================= */
 
 export type MonthName =
   | "january"
@@ -273,6 +523,7 @@ export const getOwnerActivityLogs = (
   );
 };
 
+/* ================= SUBSCRIPTION ================= */
 
 export type SubscriptionStatus =
   | "trialing"
@@ -303,14 +554,14 @@ export type OwnerSubscription = {
 };
 
 export const getOwnerCurrentSubscription = () =>
-  API.get<OwnerSubscription | {
-    success: boolean;
-    data: OwnerSubscription;
-  }>("/admin/owner/current-sub");
+  API.get<
+    OwnerSubscription | {
+      success: boolean;
+      data: OwnerSubscription;
+    }
+  >("/admin/owner/current-sub");
 
-
-
-  /* ================= OWNER SUBSCRIPTION HISTORY ================= */
+/* ================= OWNER SUBSCRIPTION HISTORY ================= */
 
 export type SubscriptionHistoryStatus =
   | "trialing"
@@ -352,18 +603,16 @@ export type SubscriptionHistoryResponse = {
       id: string;
       name: string;
     } | null;
-
     subscriptions: SubscriptionHistoryItem[];
   };
 };
 
-export const getOwnerSubscriptionHistory =
-  () =>
-    API.get<SubscriptionHistoryResponse>(
-      "/admin/subscription/history"
-    );
+export const getOwnerSubscriptionHistory = () =>
+  API.get<SubscriptionHistoryResponse>(
+    "/admin/subscription/history"
+  );
 
-
+/* ================= BRANCH DASHBOARD ================= */
 
 export type BranchStatus =
   | "active"
@@ -464,12 +713,6 @@ export type BranchAdminDashboardResponse = {
   data: BranchAdminDashboardData;
 };
 
-/**
- * Dashboard overview for a specific branch.
- *
- * Current assumed route:
- * GET /admin/branch/:branchId/dashboard/overview
- */
 export const getBranchAdminDashboardOverview = (
   branchId: string
 ) => {
@@ -489,7 +732,7 @@ export const getBranchAdminDashboardOverview = (
   );
 };
 
-
+/* ================= BRANCH ATTENDANCE ================= */
 
 export type AttendanceFilters = {
   from?: string;
@@ -583,7 +826,6 @@ export type AttendanceRecord = {
 export type BranchAttendanceResponse = {
   success: boolean;
   message: string;
-
   data: {
     branch: {
       id: string;
@@ -650,7 +892,10 @@ export async function getBranchAttendanceLogs(
     );
   }
 
-  const params: Record<string, string | number> = {};
+  const params: Record<
+    string,
+    string | number
+  > = {};
 
   if (filters.from) {
     params.from = filters.from;
@@ -689,4 +934,3 @@ export async function getBranchAttendanceLogs(
 
   return response.data;
 }
-

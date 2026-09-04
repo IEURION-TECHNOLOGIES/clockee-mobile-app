@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -11,10 +11,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Circle, Line, Rect, Text as SvgText } from "react-native-svg";
+import Svg, { Circle } from "react-native-svg";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import UserActionModal from "@/components/UserActionModal";
+import ManualOverrideModal from "@/components/manualOverideModal";
 
 import {
   allowRemoteClocking,
@@ -48,7 +49,13 @@ type WeeklyStats = {
 type TrendDay = {
   day?: string;
   date?: string;
-  status?: "present" | "absent" | "late" | "holiday" | "weekend" | string;
+  status?:
+    | "present"
+    | "absent"
+    | "late"
+    | "holiday"
+    | "weekend"
+    | string;
   hoursWorked?: number;
 };
 
@@ -61,20 +68,38 @@ type StaffData = {
   user?: any;
 };
 
-const COLORS = {
-  primary: "#0284C7",
-  primaryDark: "#0F172A",
-  primaryLight: "#38BDF8",
-  bg: "#F1F5F9",
-  card: "#FFFFFF",
-  border: "#E2E8F0",
-  textDark: "#0F172A",
-  textMuted: "#64748B",
-  green: "#22C55E",
-  red: "#EF4444",
-  amber: "#F59E0B",
-  slateBar: "#E2E8F0",
+/* ================= THEME ================= */
+const C = {
+  bg: "#EEF1F6",
+  surface: "#FFFFFF",
+  surfaceAlt: "#F6F7FB",
+  border: "#E5E8EF",
+  brand: "#4338CA",
+  brandSoft: "#EEF0FF",
+  ink: "#0F172A",
+  muted: "#64748B",
+  faint: "#94A3B8",
+  green: "#0F9D58",
+  greenSoft: "#E6F5EC",
+  red: "#DC2626",
+  redSoft: "#FCE9E9",
+  amber: "#D97706",
+  amberSoft: "#FBF0E1",
+  onBrand: "#FFFFFF",
 };
+
+const TABS = ["Overview", "Analytics", "Profile"] as const;
+type Tab = (typeof TABS)[number];
+const DAY_LABELS = [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun",
+];
+const WORK_TARGET_MIN = 480; // 8h standard workday
 
 /* ================= HELPERS ================= */
 function minutesToHrsMins(mins: number) {
@@ -88,48 +113,59 @@ function formatClockTime(iso: string | null) {
   if (!iso) return "--:--";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function statusColor(status?: string) {
   switch (status) {
     case "present":
-      return COLORS.green;
+      return C.green;
     case "late":
-      return COLORS.amber;
+      return C.amber;
     case "absent":
-      return COLORS.red;
-    case "holiday":
-    case "weekend":
-      return COLORS.border;
+      return C.red;
     default:
-      return COLORS.border;
+      return C.border;
   }
 }
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function toFixed1(n?: number) {
+  const v = Number(n ?? 0);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
 
 export default function StaffProfile() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const { institutionId, staffId: paramStaffId } = useLocalSearchParams<{
+  const {
+    institutionId,
+    staffId: paramStaffId,
+  } = useLocalSearchParams<{
     institutionId?: string;
     staffId?: string;
   }>();
 
-  const [actionVisible, setActionVisible] = useState(false);
-  const [loadingAction, setLoadingAction] = useState(false);
+  const [actionVisible, setActionVisible] =
+    useState(false);
 
-  // ================= FETCH SINGLE USER =================
-  const {
-    data: rawData,
-    isLoading,
-    isError,
-  } = useQuery({
+  const [overrideVisible, setOverrideVisible] =
+    useState(false);
+
+  const [loadingAction, setLoadingAction] =
+    useState(false);
+
+  const [tab, setTab] = useState<Tab>("Overview");
+
+  /* ================= FETCH SINGLE USER ================= */
+  const { data: rawData, isLoading, isError } = useQuery({
     queryKey: ["staffProfile", paramStaffId],
     queryFn: async () => {
-      if (!paramStaffId) throw new Error("Staff ID is required");
+      if (!paramStaffId)
+        throw new Error("Staff ID is required");
       const res = await getSingleUser(paramStaffId);
       return res?.data?.data || res?.data;
     },
@@ -141,39 +177,83 @@ export default function StaffProfile() {
   const staff = staffData?.user;
   const todayStatus = staffData?.attendance?.todayStatus;
   const weeklyStats = staffData?.attendance?.weeklyStats;
-  const weeklyTrend = staffData?.attendance?.weeklyTrend ?? [];
+  const weeklyTrend =
+    staffData?.attendance?.weeklyTrend ?? [];
 
-  // ================= ACTION HANDLER =================
-  const runAction = async (fn: Function, extraParams?: any[]) => {
+  /* ================= ACTION HANDLER ================= */
+  const runAction = async (
+    fn: Function,
+    extraParams?: any[]
+  ) => {
     try {
       setLoadingAction(true);
-      const currentStaffId = paramStaffId || staff?._id;
-      if (!currentStaffId) throw new Error("User ID not found");
+
+      const currentStaffId =
+        paramStaffId || staff?._id;
+
+      if (!currentStaffId) {
+        throw new Error("User ID not found");
+      }
+
+      const wrappedFn = async (
+        id: string,
+        ...args: any[]
+      ) => {
+        const res = await fn(id, ...args);
+        console.log("ACTION RESPONSE:", res);
+        return res;
+      };
 
       if (extraParams) {
-        await fn(currentStaffId, ...extraParams);
+        await wrappedFn(currentStaffId, ...extraParams);
       } else {
-        await fn(currentStaffId);
+        await wrappedFn(currentStaffId);
       }
 
       await queryClient.invalidateQueries({
         queryKey: ["staffProfile", paramStaffId],
       });
-    } catch (err) {
-      console.error("Action failed:", err);
+
+      setActionVisible(false);
+    } catch (err: any) {
+      console.error("=== ACTION ERROR ===");
+      console.error("Full error:", err);
+      console.error(
+        "Status:",
+        err?.response?.status
+      );
+      console.error(
+        "Data:",
+        err?.response?.data
+      );
+      console.error("Config:", err?.config);
     } finally {
       setLoadingAction(false);
-      setActionVisible(false);
     }
   };
 
-  // ================= STATES =================
+  const handleManualOverrideSuccess = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["staffProfile", paramStaffId],
+    });
+  };
+
+  /* ================= STATES ================= */
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ marginTop: 12, color: COLORS.textMuted }}>
-          Loading profile...
+        <ActivityIndicator
+          size="large"
+          color={C.brand}
+        />
+        <Text
+          style={{
+            marginTop: 12,
+            color: C.muted,
+            fontWeight: "600",
+          }}
+        >
+          Loading profile…
         </Text>
       </View>
     );
@@ -182,215 +262,554 @@ export default function StaffProfile() {
   if (isError || !staff) {
     return (
       <View style={styles.center}>
-        <Ionicons name="alert-circle-outline" size={60} color={COLORS.red} />
-        <Text style={{ marginTop: 16, fontSize: 18, fontWeight: "600" }}>
+        <View style={styles.errIcon}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={40}
+            color={C.red}
+          />
+        </View>
+        <Text
+          style={{
+            marginTop: 16,
+            fontSize: 18,
+            fontWeight: "800",
+            color: C.ink,
+          }}
+        >
           User Not Found
         </Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={{ color: COLORS.primary }}>Go Back</Text>
+        <Text
+          style={{
+            marginTop: 6,
+            color: C.muted,
+          }}
+        >
+          We couldn&apos;t load this staff profile.
+        </Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons
+            name="arrow-back"
+            size={16}
+            color={C.onBrand}
+          />
+          <Text
+            style={{
+              color: C.onBrand,
+              fontWeight: "700",
+            }}
+          >
+            Go Back
+          </Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ================= DERIVED VALUES =================
+  /* ================= DERIVED VALUES ================= */
   const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
     staff.name || "User"
-  )}&background=0284C7&color=fff`;
+  )}&background=4338CA&color=fff&bold=true`;
 
   const isAdmin = Array.isArray(staff.role)
-    ? staff.role.some((r: string) => r?.toLowerCase().includes("admin"))
+    ? staff.role.some((r: string) =>
+        r?.toLowerCase().includes("admin")
+      )
     : typeof staff.role === "string"
     ? staff.role.toLowerCase().includes("admin")
     : false;
 
-  const roleLabel: "admin" | "staff" = isAdmin ? "admin" : "staff";
+  const roleLabel: "admin" | "staff" = isAdmin
+    ? "admin"
+    : "staff";
+
   const isActive = staff.isActive ?? true;
-  const remoteAccess = staff.remoteAccess?.allowed ?? false;
+  const remoteAccess =
+    staff.remoteAccess?.allowed ?? false;
 
-  const branchName = staff.branch?.name || staff.branchId?.name || "N/A";
-  const branchAddress = staff.branch?.address || staff.branchId?.address || "N/A";
+  const branchName =
+    staff.branch?.name ||
+    staff.branchId?.name ||
+    "N/A";
 
-  // ================= UI =================
+  const branchAddress =
+    staff.branch?.address ||
+    staff.branchId?.address ||
+    "N/A";
+
+  const branchIdValue =
+    typeof staff.branchId === "string"
+      ? staff.branchId
+      : staff.branchId?._id;
+
+  const workedToday =
+    todayStatus?.totalWorkedToday ?? 0;
+
+  const workedPct = Math.min(
+    100,
+    Math.round((workedToday / WORK_TARGET_MIN) * 100)
+  );
+
+  /* ================= UI ================= */
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.hero}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
+      {/* ===== TOP APP BAR ===== */}
+      <View style={styles.appBar}>
+        <TouchableOpacity
+          style={styles.appBarBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={22}
+            color={C.ink}
+          />
+        </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setActionVisible(true)} hitSlop={10}>
-            <Ionicons name="ellipsis-vertical" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.appBarTitle}>
+          Staff Profile
+        </Text>
 
-        <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-        <Text style={styles.name}>{staff.name}</Text>
-        <Text style={styles.role}>{roleLabel.toUpperCase()}</Text>
-
-        <View style={styles.badgeRow}>
-          <View style={styles.pillBadge}>
-            <Ionicons
-              name={isActive ? "checkmark-circle" : "close-circle"}
-              size={13}
-              color={isActive ? COLORS.green : COLORS.red}
-            />
-            <Text style={styles.pillText}>{isActive ? "ACTIVE" : "INACTIVE"}</Text>
-          </View>
-
-          <View style={styles.pillBadge}>
-            <Ionicons
-              name={remoteAccess ? "wifi" : "wifi-outline"}
-              size={13}
-              color={remoteAccess ? COLORS.green : COLORS.red}
-            />
-            <Text style={styles.pillText}>
-              {remoteAccess ? "REMOTE ON" : "REMOTE OFF"}
-            </Text>
-          </View>
-
-          <View style={styles.pillBadge}>
-            <Ionicons name="location-outline" size={13} color={COLORS.primaryLight} />
-            <Text style={styles.pillText}>
-              {(staff.clockMode || "onsite").toUpperCase()}
-            </Text>
-          </View>
-        </View>
-      </LinearGradient>
+        {/* Actions menu (three dots) */}
+        <TouchableOpacity
+          style={styles.appBarBtn}
+          onPress={() => setActionVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={20}
+            color={C.ink}
+          />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingBottom: 48,
+        }}
       >
-        {/* ===== TODAY'S ATTENDANCE ===== */}
-        <SectionCard title="Today's Attendance" icon="time-outline">
-          <View style={styles.todayRow}>
-            <ClockChip
-              label="Clock In"
-              time={formatClockTime(todayStatus?.clockInTime ?? null)}
-              active={!!todayStatus?.clockedIn}
-              lateMinutes={todayStatus?.minutesLate}
-              icon="log-in-outline"
-            />
-            <View style={styles.todayDivider} />
-            <ClockChip
-              label="Clock Out"
-              time={formatClockTime(todayStatus?.clockOutTime ?? null)}
-              active={!!todayStatus?.clockedOut}
-              icon="log-out-outline"
-            />
-          </View>
+        {/* ===== IDENTITY HEADER ===== */}
+        <View style={styles.headerCard}>
+          <LinearGradient
+            colors={["#4338CA", "#6D28D9"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerBanner}
+          />
 
-          <View style={styles.workedRow}>
-            <Ionicons name="hourglass-outline" size={16} color={COLORS.textMuted} />
-            <Text style={styles.workedText}>
-              Worked today:{" "}
-              <Text style={styles.workedValue}>
-                {minutesToHrsMins(todayStatus?.totalWorkedToday ?? 0)}
-              </Text>
-            </Text>
-          </View>
-
-          {!todayStatus?.clockedIn && (
-            <View style={styles.noticeBox}>
-              <Ionicons name="alert-circle-outline" size={15} color={COLORS.amber} />
-              <Text style={styles.noticeText}>
-                Not clocked in yet today.
-              </Text>
-            </View>
-          )}
-        </SectionCard>
-
-        {/* ===== WEEKLY PERFORMANCE ===== */}
-        <SectionCard title="This Week's Performance" icon="stats-chart-outline">
-          <View style={styles.weeklyTop}>
-            <AttendanceRing rate={weeklyStats?.attendanceRate ?? 0} />
-
-            <View style={styles.kpiGrid}>
-              <KpiCell
-                label="Present"
-                value={weeklyStats?.presentDays ?? 0}
-                color={COLORS.green}
+          <View style={styles.headerBody}>
+            <View style={styles.avatarWrap}>
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatar}
               />
-              <KpiCell
-                label="Absent"
-                value={weeklyStats?.absentDays ?? 0}
-                color={COLORS.red}
-              />
-              <KpiCell
-                label="Late"
-                value={weeklyStats?.lateDays ?? 0}
-                color={COLORS.amber}
-              />
-              <KpiCell
-                label="Overtime (hrs)"
-                value={weeklyStats?.overtimeHours ?? 0}
-                color={COLORS.primary}
+
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor: isActive
+                      ? C.green
+                      : C.red,
+                  },
+                ]}
               />
             </View>
-          </View>
 
-          <View style={styles.totalHoursBar}>
-            <Ionicons name="time-outline" size={16} color={COLORS.textMuted} />
-            <Text style={styles.workedText}>
-              Total hours this week:{" "}
-              <Text style={styles.workedValue}>
-                {(weeklyStats?.totalHoursWeek ?? 0).toFixed
-                  ? weeklyStats!.totalHoursWeek.toFixed(1)
-                  : weeklyStats?.totalHoursWeek ?? 0}
-                h
-              </Text>
+            <Text style={styles.name}>
+              {staff.name}
             </Text>
-          </View>
-        </SectionCard>
 
-        {/* ===== WEEKLY TREND ===== */}
-        <SectionCard title="7-Day Trend" icon="calendar-outline">
-          <WeeklyTrendChart data={weeklyTrend} />
-          <View style={styles.legendRow}>
-            <LegendDot color={COLORS.green} label="Present" />
-            <LegendDot color={COLORS.amber} label="Late" />
-            <LegendDot color={COLORS.red} label="Absent" />
-            <LegendDot color={COLORS.border} label="No data" />
-          </View>
-        </SectionCard>
+            <Text style={styles.subline}>
+              {staff.departmentOrUnit ||
+                "Staff Member"}
+            </Text>
 
-        {/* ===== STAFF DETAILS ===== */}
-        <SectionCard title="Staff Details" icon="person-outline">
-          <InfoRow icon="mail-outline" label="Email" value={staff.email} />
-          <InfoRow
-            icon="business-outline"
-            label="Department / Unit"
-            value={staff.departmentOrUnit}
-          />
-          <InfoRow
-            icon="card-outline"
-            label="Staff ID"
-            value={staff.studentOrStaffId}
-          />
-          <InfoRow
-            icon="git-branch-outline"
-            label="Branch"
-            value={branchName}
-          />
-          <InfoRow
-            icon="location-outline"
-            label="Branch Address"
-            value={branchAddress}
-          />
-          <InfoRow
-            icon="school-outline"
-            label="Institution"
-            value={staff.institutionName}
-          />
-          <InfoRow
-            icon="calendar-outline"
-            label="Joined"
-            value={staff.createdAt ? new Date(staff.createdAt).toDateString() : "N/A"}
-            last
-          />
-        </SectionCard>
+            <View style={styles.tagRow}>
+              <Tag
+                label={
+                  roleLabel === "admin"
+                    ? "Administrator"
+                    : "Staff"
+                }
+                color={C.brand}
+                bg={C.brandSoft}
+                icon={
+                  roleLabel === "admin"
+                    ? "shield-checkmark"
+                    : "person"
+                }
+              />
+
+              <Tag
+                label={
+                  isActive ? "Active" : "Inactive"
+                }
+                color={isActive ? C.green : C.red}
+                bg={
+                  isActive
+                    ? C.greenSoft
+                    : C.redSoft
+                }
+                icon={
+                  isActive
+                    ? "checkmark-circle"
+                    : "close-circle"
+                }
+              />
+
+              <Tag
+                label={
+                  remoteAccess
+                    ? "Remote On"
+                    : "Onsite"
+                }
+                color={
+                  remoteAccess ? C.green : C.muted
+                }
+                bg={
+                  remoteAccess
+                    ? C.greenSoft
+                    : C.surfaceAlt
+                }
+                icon={
+                  remoteAccess
+                    ? "globe-outline"
+                    : "business-outline"
+                }
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* ===== TABS ===== */}
+        <View style={styles.tabBar}>
+          {TABS.map((t) => {
+            const active = tab === t;
+
+            return (
+              <TouchableOpacity
+                key={t}
+                style={[
+                  styles.tabBtn,
+                  active && styles.tabBtnActive,
+                ]}
+                onPress={() => setTab(t)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    active && styles.tabTextActive,
+                  ]}
+                >
+                  {t}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ================= OVERVIEW ================= */}
+        {tab === "Overview" && (
+          <View style={styles.section}>
+            <Card
+              title="Today's Attendance"
+              icon="today-outline"
+            >
+              <View style={styles.clockRow}>
+                <ClockBlock
+                  label="Clock In"
+                  time={formatClockTime(
+                    todayStatus?.clockInTime ?? null
+                  )}
+                  active={!!todayStatus?.clockedIn}
+                  lateMinutes={
+                    todayStatus?.minutesLate
+                  }
+                  icon="log-in-outline"
+                />
+
+                <ClockBlock
+                  label="Clock Out"
+                  time={formatClockTime(
+                    todayStatus?.clockOutTime ?? null
+                  )}
+                  active={!!todayStatus?.clockedOut}
+                  icon="log-out-outline"
+                />
+              </View>
+
+              <View style={styles.progressWrap}>
+                <View style={styles.progressHead}>
+                  <Text style={styles.progressLabel}>
+                    Hours worked today
+                  </Text>
+
+                  <Text style={styles.progressValue}>
+                    {minutesToHrsMins(workedToday)}{" "}
+                    <Text style={styles.progressTarget}>
+                      / 8h
+                    </Text>
+                  </Text>
+                </View>
+
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${Math.max(
+                          3,
+                          workedPct
+                        )}%`,
+                        backgroundColor:
+                          workedPct >= 100
+                            ? C.green
+                            : C.brand,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              {!todayStatus?.clockedIn && (
+                <View style={styles.notice}>
+                  <Ionicons
+                    name="information-circle"
+                    size={16}
+                    color={C.amber}
+                  />
+
+                  <Text style={styles.noticeText}>
+                    Not clocked in yet today.
+                  </Text>
+                </View>
+              )}
+            </Card>
+
+            <Card
+              title="Today's Timeline"
+              icon="git-commit-outline"
+            >
+              <Timeline
+                events={[
+                  {
+                    icon: "log-in-outline",
+                    title: "Clocked In",
+                    time: formatClockTime(
+                      todayStatus?.clockInTime ?? null
+                    ),
+                    done: !!todayStatus?.clockedIn,
+                    color: todayStatus?.minutesLate
+                      ? C.amber
+                      : C.green,
+                    note: todayStatus?.minutesLate
+                      ? `${todayStatus.minutesLate}m late`
+                      : undefined,
+                  },
+                  {
+                    icon: "hourglass-outline",
+                    title: "Working",
+                    time: minutesToHrsMins(workedToday),
+                    done: !!todayStatus?.clockedIn,
+                    color: C.brand,
+                  },
+                  {
+                    icon: "log-out-outline",
+                    title: "Clocked Out",
+                    time: formatClockTime(
+                      todayStatus?.clockOutTime ?? null
+                    ),
+                    done: !!todayStatus?.clockedOut,
+                    color: C.green,
+                  },
+                ]}
+              />
+            </Card>
+
+            <View style={styles.statRow}>
+              <StatCard
+                label="Attendance"
+                value={`${Math.round(
+                  weeklyStats?.attendanceRate ?? 0
+                )}%`}
+                caption="this week"
+                color={C.green}
+                icon="pulse-outline"
+              />
+
+              <StatCard
+                label="Hours"
+                value={`${toFixed1(
+                  weeklyStats?.totalHoursWeek
+                )}h`}
+                caption="this week"
+                color={C.brand}
+                icon="time-outline"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ================= ANALYTICS ================= */}
+        {tab === "Analytics" && (
+          <View style={styles.section}>
+            <Card
+              title="This Week's Performance"
+              icon="stats-chart-outline"
+            >
+              <View style={styles.perfTop}>
+                <AttendanceRing
+                  rate={
+                    weeklyStats?.attendanceRate ?? 0
+                  }
+                />
+
+                <View style={styles.kpiGrid}>
+                  <KpiCell
+                    label="Present"
+                    value={weeklyStats?.presentDays ?? 0}
+                    color={C.green}
+                  />
+
+                  <KpiCell
+                    label="Absent"
+                    value={weeklyStats?.absentDays ?? 0}
+                    color={C.red}
+                  />
+
+                  <KpiCell
+                    label="Late"
+                    value={weeklyStats?.lateDays ?? 0}
+                    color={C.amber}
+                  />
+
+                  <KpiCell
+                    label="Overtime"
+                    value={
+                      weeklyStats?.overtimeHours ?? 0
+                    }
+                    color={C.brand}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.totalBar}>
+                <Ionicons
+                  name="time-outline"
+                  size={16}
+                  color={C.brand}
+                />
+
+                <Text style={styles.totalLabel}>
+                  Total hours this week
+                </Text>
+
+                <Text style={styles.totalValue}>
+                  {toFixed1(
+                    weeklyStats?.totalHoursWeek
+                  )}
+                  h
+                </Text>
+              </View>
+            </Card>
+
+            <Card
+              title="7-Day Trend"
+              icon="calendar-outline"
+            >
+              <WeeklyTrendChart data={weeklyTrend} />
+
+              <View style={styles.legendRow}>
+                <LegendDot
+                  color={C.green}
+                  label="Present"
+                />
+
+                <LegendDot
+                  color={C.amber}
+                  label="Late"
+                />
+
+                <LegendDot
+                  color={C.red}
+                  label="Absent"
+                />
+
+                <LegendDot
+                  color={C.border}
+                  label="No data"
+                />
+              </View>
+            </Card>
+          </View>
+        )}
+
+        {/* ================= PROFILE ================= */}
+        {tab === "Profile" && (
+          <View style={styles.section}>
+            <Card
+              title="Staff Details"
+              icon="person-outline"
+            >
+              <InfoRow
+                icon="mail-outline"
+                label="Email"
+                value={staff.email}
+              />
+
+              <InfoRow
+                icon="briefcase-outline"
+                label="Department / Unit"
+                value={staff.departmentOrUnit}
+              />
+
+              <InfoRow
+                icon="card-outline"
+                label="Staff ID"
+                value={staff.studentOrStaffId}
+              />
+
+              <InfoRow
+                icon="git-branch-outline"
+                label="Branch"
+                value={branchName}
+              />
+
+              <InfoRow
+                icon="location-outline"
+                label="Branch Address"
+                value={branchAddress}
+              />
+
+              <InfoRow
+                icon="school-outline"
+                label="Institution"
+                value={staff.institutionName}
+              />
+
+              <InfoRow
+                icon="calendar-outline"
+                label="Joined"
+                value={
+                  staff.createdAt
+                    ? new Date(
+                        staff.createdAt
+                      ).toDateString()
+                    : "N/A"
+                }
+                last
+              />
+            </Card>
+          </View>
+        )}
       </ScrollView>
 
       <UserActionModal
@@ -401,18 +820,59 @@ export default function StaffProfile() {
         loading={loadingAction}
         onClose={() => setActionVisible(false)}
         onPromote={() => runAction(promoteToAdmin)}
-        onDeactivate={() => runAction(deactivateUser)}
-        onReactivate={() => runAction(reactivateUser)}
-        onToggleRemote={() =>
-          runAction(allowRemoteClocking, [institutionId!, !remoteAccess])
+        onDeactivate={() =>
+          runAction(deactivateUser)
         }
+        onReactivate={() =>
+          runAction(reactivateUser)
+        }
+        onToggleRemote={() =>
+          runAction(allowRemoteClocking, [
+            institutionId!,
+            !remoteAccess,
+          ])
+        }
+        onManualOverride={() => {
+          setActionVisible(false);
+          setOverrideVisible(true);
+        }}
+      />
+
+      <ManualOverrideModal
+        visible={overrideVisible}
+        userId={staff._id}
+        branchId={branchIdValue}
+        userName={staff.name}
+        onClose={() => setOverrideVisible(false)}
+        onSuccess={handleManualOverrideSuccess}
       />
     </View>
   );
 }
 
-/* ================= SECTION CARD ================= */
-function SectionCard({
+/* ================= SUB-COMPONENTS ================= */
+function Tag({
+  label,
+  color,
+  bg,
+  icon,
+}: {
+  label: string;
+  color: string;
+  bg: string;
+  icon: any;
+}) {
+  return (
+    <View style={[styles.tag, { backgroundColor: bg }]}>
+      <Ionicons name={icon} size={13} color={color} />
+      <Text style={[styles.tagText, { color }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function Card({
   title,
   icon,
   children,
@@ -422,18 +882,27 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Ionicons name={icon} size={16} color={COLORS.primary} />
-        <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardIcon}>
+          <Ionicons
+            name={icon}
+            size={16}
+            color={C.brand}
+          />
+        </View>
+
+        <Text style={styles.cardTitle}>
+          {title}
+        </Text>
       </View>
+
       {children}
     </View>
   );
 }
 
-/* ================= CLOCK CHIP ================= */
-function ClockChip({
+function ClockBlock({
   label,
   time,
   active,
@@ -447,156 +916,349 @@ function ClockChip({
   icon: any;
 }) {
   return (
-    <View style={styles.clockChip}>
-      <View
+    <View style={styles.clockBlock}>
+      <View style={styles.clockTop}>
+        <View
+          style={[
+            styles.clockIcon,
+            {
+              backgroundColor: active
+                ? C.greenSoft
+                : C.surfaceAlt,
+            },
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={18}
+            color={active ? C.green : C.faint}
+          />
+        </View>
+
+        <Text style={styles.clockLabel}>
+          {label}
+        </Text>
+      </View>
+
+      <Text
         style={[
-          styles.clockIconWrap,
-          { backgroundColor: active ? "#DCFCE7" : "#F1F5F9" },
+          styles.clockTime,
+          { color: active ? C.ink : C.faint },
         ]}
       >
-        <Ionicons
-          name={icon}
-          size={18}
-          color={active ? COLORS.green : COLORS.textMuted}
-        />
-      </View>
-      <Text style={styles.clockLabel}>{label}</Text>
-      <Text style={styles.clockTime}>{time}</Text>
+        {time}
+      </Text>
+
       {!!lateMinutes && lateMinutes > 0 && (
-        <Text style={styles.lateTag}>{lateMinutes}m late</Text>
+        <View style={styles.lateTag}>
+          <Text style={styles.lateTagText}>
+            {lateMinutes}m late
+          </Text>
+        </View>
       )}
     </View>
   );
 }
 
-/* ================= KPI CELL ================= */
-function KpiCell({ label, value, color }: { label: string; value: number; color: string }) {
+function StatCard({
+  label,
+  value,
+  caption,
+  color,
+  icon,
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  color: string;
+  icon: any;
+}) {
   return (
-    <View style={styles.kpiCell}>
-      <Text style={[styles.kpiValue, { color }]}>{value}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
+    <View style={styles.statCard}>
+      <View
+        style={[
+          styles.statAccent,
+          { backgroundColor: color },
+        ]}
+      />
+
+      <View style={styles.statInner}>
+        <View style={styles.statHead}>
+          <Ionicons
+            name={icon}
+            size={16}
+            color={color}
+          />
+
+          <Text style={styles.statLabel}>
+            {label}
+          </Text>
+        </View>
+
+        <Text style={styles.statValue}>
+          {value}
+        </Text>
+
+        <Text style={styles.statCaption}>
+          {caption}
+        </Text>
+      </View>
     </View>
   );
 }
 
-/* ================= ATTENDANCE RING (SVG) ================= */
-function AttendanceRing({ rate }: { rate: number }) {
-  const size = 100;
-  const stroke = 10;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const clamped = Math.max(0, Math.min(100, rate));
-  const offset = circumference - (clamped / 100) * circumference;
+function KpiCell({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <View style={styles.kpiCell}>
+      <View
+        style={[
+          styles.kpiBadge,
+          { backgroundColor: color },
+        ]}
+      />
 
-  const ringColor =
-    clamped >= 75 ? COLORS.green : clamped >= 40 ? COLORS.amber : COLORS.red;
+      <View>
+        <Text style={styles.kpiValue}>
+          {value}
+        </Text>
+
+        <Text style={styles.kpiLabel}>
+          {label}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function Timeline({
+  events,
+}: {
+  events: {
+    icon: any;
+    title: string;
+    time: string;
+    done: boolean;
+    color: string;
+    note?: string;
+  }[];
+}) {
+  return (
+    <View>
+      {events.map((e, i) => (
+        <View key={i} style={styles.tlRow}>
+          <View style={styles.tlLeft}>
+            <View
+              style={[
+                styles.tlDot,
+                {
+                  backgroundColor: e.done
+                    ? e.color
+                    : C.surfaceAlt,
+                  borderColor: e.done
+                    ? e.color
+                    : C.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name={e.icon}
+                size={14}
+                color={
+                  e.done ? C.onBrand : C.faint
+                }
+              />
+            </View>
+
+            {i < events.length - 1 && (
+              <View style={styles.tlLine} />
+            )}
+          </View>
+
+          <View style={styles.tlBody}>
+            <Text style={styles.tlTitle}>
+              {e.title}
+            </Text>
+
+            <View style={styles.tlMetaRow}>
+              <Text
+                style={[
+                  styles.tlTime,
+                  { color: e.done ? C.ink : C.faint },
+                ]}
+              >
+                {e.time}
+              </Text>
+
+              {e.note && (
+                <View style={styles.tlNote}>
+                  <Text style={styles.tlNoteText}>
+                    {e.note}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AttendanceRing({ rate }: { rate: number }) {
+  const size = 108;
+  const stroke = 11;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, rate));
+  const offset = circ - (pct / 100) * circ;
+  const color =
+    pct >= 80
+      ? C.green
+      : pct >= 50
+      ? C.amber
+      : C.red;
 
   return (
-    <View style={styles.ringWrap}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <Svg width={size} height={size}>
         <Circle
           cx={size / 2}
           cy={size / 2}
-          r={radius}
-          stroke={COLORS.slateBar}
+          r={r}
+          stroke={C.surfaceAlt}
           strokeWidth={stroke}
           fill="none"
         />
+
         <Circle
           cx={size / 2}
           cy={size / 2}
-          r={radius}
-          stroke={ringColor}
+          r={r}
+          stroke={color}
           strokeWidth={stroke}
           fill="none"
-          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDasharray={circ}
           strokeDashoffset={offset}
           strokeLinecap="round"
           rotation={-90}
           origin={`${size / 2}, ${size / 2}`}
         />
       </Svg>
+
       <View style={styles.ringCenter}>
-        <Text style={styles.ringValue}>{Math.round(clamped)}%</Text>
-        <Text style={styles.ringCaption}>Attendance</Text>
+        <Text
+          style={[styles.ringValue, { color }]}
+        >
+          {Math.round(pct)}%
+        </Text>
+
+        <Text style={styles.ringLabel}>
+          attendance
+        </Text>
       </View>
     </View>
   );
 }
 
-/* ================= WEEKLY TREND CHART (SVG) ================= */
 function WeeklyTrendChart({ data }: { data: TrendDay[] }) {
-  const width = 300;
-  const height = 130;
-  const paddingX = 12;
-  const barAreaHeight = 90;
-  const maxHours = useMemo(() => {
-    const max = Math.max(1, ...data.map((d) => d.hoursWorked ?? 0));
-    return max;
-  }, [data]);
+  const days: TrendDay[] = DAY_LABELS.map(
+    (label, idx) => {
+      const found = data[idx] || {};
 
-  const days: TrendDay[] =
-    data.length === 7
-      ? data
-      : DAY_LABELS.map((label, i) => data[i] ?? { day: label, status: undefined, hoursWorked: 0 });
+      return {
+        day: found.day || label,
+        status: found.status,
+        hoursWorked: found.hoursWorked ?? 0,
+      };
+    }
+  );
 
-  const barWidth = (width - paddingX * 2) / days.length - 10;
+  const maxHrs = Math.max(
+    8,
+    ...days.map((d) => d.hoursWorked ?? 0)
+  );
 
   return (
-    <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-      <Line
-        x1={paddingX}
-        y1={barAreaHeight + 4}
-        x2={width - paddingX}
-        y2={barAreaHeight + 4}
-        stroke={COLORS.border}
-        strokeWidth={1}
-      />
+    <View style={styles.chart}>
       {days.map((d, i) => {
-        const hours = d.hoursWorked ?? 0;
-        const barH = Math.max(4, (hours / maxHours) * (barAreaHeight - 10));
-        const x = paddingX + i * ((width - paddingX * 2) / days.length) + 5;
-        const y = barAreaHeight + 4 - barH;
-        const color = statusColor(d.status);
-        const label = d.day ?? DAY_LABELS[i];
+        const hrs = d.hoursWorked ?? 0;
+        const heightPct = Math.max(
+          6,
+          (hrs / maxHrs) * 100
+        );
+
+        const col = statusColor(d.status);
 
         return (
-          <React.Fragment key={`${label}-${i}`}>
-            <Rect
-              x={x}
-              y={y}
-              width={barWidth}
-              height={barH}
-              rx={4}
-              fill={color}
-            />
-            <SvgText
-              x={x + barWidth / 2}
-              y={barAreaHeight + 20}
-              fontSize="10"
-              fill={COLORS.textMuted}
-              textAnchor="middle"
-            >
-              {label}
-            </SvgText>
-          </React.Fragment>
+          <View key={i} style={styles.chartCol}>
+            <Text style={styles.chartValue}>
+              {hrs > 0 ? `${toFixed1(hrs)}` : "-"}
+            </Text>
+
+            <View style={styles.chartBarTrack}>
+              <View
+                style={[
+                  styles.chartBar,
+                  {
+                    height: `${heightPct}%`,
+                    backgroundColor:
+                      hrs > 0 ? col : C.border,
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.chartDay}>
+              {(d.day || DAY_LABELS[i]).slice(
+                0,
+                3
+              )}
+            </Text>
+          </View>
         );
       })}
-    </Svg>
-  );
-}
-
-/* ================= LEGEND DOT ================= */
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendSwatch, { backgroundColor: color }]} />
-      <Text style={styles.legendLabel}>{label}</Text>
     </View>
   );
 }
 
-/* ================= INFO ROW ================= */
+function LegendDot({
+  color,
+  label,
+}: {
+  color: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.legendItem}>
+      <View
+        style={[
+          styles.legendDot,
+          { backgroundColor: color },
+        ]}
+      />
+
+      <Text style={styles.legendText}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function InfoRow({
   icon,
   label,
@@ -605,15 +1267,32 @@ function InfoRow({
 }: {
   icon: any;
   label: string;
-  value?: string | null;
+  value?: string;
   last?: boolean;
 }) {
   return (
-    <View style={[styles.infoRow, last && { borderBottomWidth: 0 }]}>
-      <Ionicons name={icon} size={18} color={COLORS.primary} />
+    <View
+      style={[
+        styles.infoRow,
+        last && { borderBottomWidth: 0 },
+      ]}
+    >
+      <View style={styles.infoIcon}>
+        <Ionicons
+          name={icon}
+          size={16}
+          color={C.brand}
+        />
+      </View>
+
       <View style={{ flex: 1 }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value || "N/A"}</Text>
+        <Text style={styles.infoLabel}>
+          {label}
+        </Text>
+
+        <Text style={styles.infoValue}>
+          {value || "N/A"}
+        </Text>
       </View>
     </View>
   );
@@ -621,128 +1300,393 @@ function InfoRow({
 
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: COLORS.bg },
-
-  hero: {
-    paddingTop: 60,
-    paddingBottom: 26,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    alignItems: "center",
+  container: {
+    flex: 1,
+    backgroundColor: C.bg,
   },
 
-  header: {
-    position: "absolute",
-    top: 48,
-    left: 16,
-    right: 16,
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.bg,
+    padding: 24,
+  },
+
+  errIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: C.redSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  backButton: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 20,
+    backgroundColor: C.brand,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+
+  appBar: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 52,
+    paddingBottom: 12,
+    backgroundColor: C.bg,
+  },
+
+  appBarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: C.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+
+  appBarTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: 0.2,
+  },
+
+  headerCard: {
+    marginHorizontal: 16,
+    borderRadius: 22,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    shadowColor: "#1E293B",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+
+  headerBanner: {
+    height: 78,
+    width: "100%",
+  },
+
+  headerBody: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 22,
+    marginTop: -40,
+  },
+
+  avatarWrap: {
+    position: "relative",
   },
 
   avatar: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    marginBottom: 10,
+    width: 84,
+    height: 84,
+    borderRadius: 24,
+    borderWidth: 4,
+    borderColor: C.surface,
+    backgroundColor: C.brandSoft,
+  },
+
+  statusDot: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 3,
-    borderColor: "#fff",
+    borderColor: C.surface,
   },
 
-  name: { fontSize: 18, fontWeight: "800", color: "#fff" },
-  role: { fontSize: 12, marginTop: 2, color: "#E0F2FE", fontWeight: "600", letterSpacing: 0.5 },
+  name: {
+    fontSize: 21,
+    fontWeight: "800",
+    color: C.ink,
+    marginTop: 12,
+  },
 
-  badgeRow: {
+  subline: {
+    fontSize: 13,
+    color: C.muted,
+    marginTop: 3,
+    fontWeight: "600",
+  },
+
+  tagRow: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 14,
     flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16,
     justifyContent: "center",
-    paddingHorizontal: 16,
   },
 
-  pillBadge: {
+  tag: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 999,
   },
-  pillText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+
+  tagText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  tabBar: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 18,
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    padding: 5,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  tabBtnActive: {
+    backgroundColor: C.brand,
+  },
+
+  tabText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.muted,
+  },
+
+  tabTextActive: {
+    color: C.onBrand,
+  },
 
   section: {
-    backgroundColor: COLORS.card,
-    marginHorizontal: 16,
-    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 14,
+  },
+
+  card: {
+    backgroundColor: C.surface,
     borderRadius: 18,
     padding: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: "#1E293B",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
 
-  sectionHeader: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 14,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: COLORS.textDark },
 
-  todayRow: { flexDirection: "row", alignItems: "center" },
-  todayDivider: { width: 1, height: 60, backgroundColor: COLORS.border, marginHorizontal: 8 },
-
-  clockChip: { flex: 1, alignItems: "center", gap: 4 },
-  clockIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  cardIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: C.brandSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
   },
-  clockLabel: { fontSize: 11, color: COLORS.textMuted, fontWeight: "600" },
-  clockTime: { fontSize: 16, fontWeight: "800", color: COLORS.textDark },
-  lateTag: {
-    fontSize: 10,
-    color: COLORS.amber,
+
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: C.ink,
+  },
+
+  clockRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+
+  clockBlock: {
+    flex: 1,
+    backgroundColor: C.surfaceAlt,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+
+  clockTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  clockIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  clockLabel: {
+    fontSize: 12,
     fontWeight: "700",
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 8,
-    marginTop: 2,
+    color: C.muted,
   },
 
-  workedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderColor: COLORS.border,
-  },
-  workedText: { fontSize: 12, color: COLORS.textMuted },
-  workedValue: { color: COLORS.textDark, fontWeight: "700" },
-
-  noticeBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  clockTime: {
+    fontSize: 22,
+    fontWeight: "800",
     marginTop: 10,
-    backgroundColor: "#FFFBEB",
-    padding: 8,
+  },
+
+  lateTag: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    backgroundColor: C.amberSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+
+  lateTagText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.amber,
+  },
+
+  progressWrap: {
+    marginTop: 16,
+  },
+
+  progressHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  progressLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.muted,
+  },
+
+  progressValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: C.ink,
+  },
+
+  progressTarget: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.faint,
+  },
+
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: C.surfaceAlt,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+
+  notice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+    backgroundColor: C.amberSoft,
+    padding: 10,
     borderRadius: 10,
   },
-  noticeText: { fontSize: 11, color: "#92400E", fontWeight: "600" },
 
-  weeklyTop: { flexDirection: "row", alignItems: "center", gap: 16 },
+  noticeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.amber,
+  },
 
-  ringWrap: { width: 100, height: 100, alignItems: "center", justifyContent: "center" },
-  ringCenter: { position: "absolute", alignItems: "center" },
-  ringValue: { fontSize: 18, fontWeight: "800", color: COLORS.textDark },
-  ringCaption: { fontSize: 9, color: COLORS.textMuted, marginTop: 1 },
+  statRow: {
+    flexDirection: "row",
+    gap: 14,
+  },
+
+  statCard: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+  },
+
+  statAccent: {
+    width: 5,
+  },
+
+  statInner: {
+    flex: 1,
+    padding: 14,
+  },
+
+  statHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.muted,
+  },
+
+  statValue: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: C.ink,
+    marginTop: 8,
+  },
+
+  statCaption: {
+    fontSize: 11,
+    color: C.faint,
+    marginTop: 2,
+    fontWeight: "600",
+  },
+
+  perfTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
 
   kpiGrid: {
     flex: 1,
@@ -750,52 +1694,229 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
   },
-  kpiCell: {
-    width: "47%",
-    backgroundColor: COLORS.bg,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: "center",
-  },
-  kpiValue: { fontSize: 16, fontWeight: "800" },
-  kpiLabel: { fontSize: 10, color: COLORS.textMuted, fontWeight: "600", marginTop: 2, textAlign: "center" },
 
-  totalHoursBar: {
+  kpiCell: {
+    width: "46%",
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+
+  kpiBadge: {
+    width: 4,
+    height: 30,
+    borderRadius: 999,
+  },
+
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.ink,
+  },
+
+  kpiLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.muted,
+  },
+
+  ringCenter: {
+    position: "absolute",
+    alignItems: "center",
+  },
+
+  ringValue: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  ringLabel: {
+    fontSize: 10,
+    color: C.muted,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+
+  totalBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 18,
+    backgroundColor: C.surfaceAlt,
+    padding: 12,
+    borderRadius: 12,
+  },
+
+  totalLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.muted,
+  },
+
+  totalValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: C.brand,
+  },
+
+  chart: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    height: 160,
+    alignItems: "flex-end",
+  },
+
+  chartCol: {
+    flex: 1,
+    alignItems: "center",
     gap: 6,
-    marginTop: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderColor: COLORS.border,
+  },
+
+  chartValue: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.muted,
+  },
+
+  chartBarTrack: {
+    width: 20,
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: C.surfaceAlt,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+
+  chartBar: {
+    width: "100%",
+    borderRadius: 8,
+  },
+
+  chartDay: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.faint,
   },
 
   legendRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
     flexWrap: "wrap",
+    gap: 14,
+    marginTop: 16,
+    justifyContent: "center",
   },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  legendSwatch: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 10, color: COLORS.textMuted, fontWeight: "600" },
+
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  legendDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 999,
+  },
+
+  legendText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.muted,
+  },
+
+  tlRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+
+  tlLeft: {
+    alignItems: "center",
+    width: 30,
+  },
+
+  tlDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+  },
+
+  tlLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: C.border,
+    marginVertical: 2,
+  },
+
+  tlBody: {
+    flex: 1,
+    paddingBottom: 18,
+  },
+
+  tlTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+  },
+
+  tlMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+
+  tlTime: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  tlNote: {
+    backgroundColor: C.amberSoft,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+
+  tlNoteText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.amber,
+  },
 
   infoRow: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 12,
     paddingVertical: 13,
     borderBottomWidth: 1,
-    borderColor: COLORS.border,
+    borderBottomColor: C.border,
   },
-  infoLabel: { fontSize: 11, color: COLORS.textMuted },
-  infoValue: { fontSize: 14, fontWeight: "600", color: COLORS.textDark, marginTop: 1 },
 
-  backButton: {
-    marginTop: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: "#E0F2FE",
-    borderRadius: 8,
+  infoIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: C.brandSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.faint,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+
+  infoValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+    marginTop: 2,
   },
 });

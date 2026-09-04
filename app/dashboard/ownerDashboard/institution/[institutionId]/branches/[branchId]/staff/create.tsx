@@ -21,8 +21,31 @@ import {
 import { useProfile } from "@/hooks/useProfile";
 import {
   assignStaffToBranchByAdmin,
+  assignStaffToShiftByAdmin,
+  createShiftByAdmin,
   createStaffByAdmin,
 } from "@/services/superAdminServices";
+
+/* ================= TYPES ================= */
+
+type EmploymentType = "full-time" | "part-time";
+
+type WeekDay =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+type DaySchedule = {
+  enabled: boolean;
+  startTime: string;
+  endTime: string;
+};
+
+type StaffSchedule = Record<WeekDay, DaySchedule>;
 
 type StaffForm = {
   name: string;
@@ -30,6 +53,8 @@ type StaffForm = {
   departmentOrUnit: string;
   studentOrStaffId: string;
   password: string;
+  employmentType: EmploymentType;
+  schedule: StaffSchedule;
 };
 
 type InputFieldProps = {
@@ -45,13 +70,98 @@ type InputFieldProps = {
   passwordVisible?: boolean;
 };
 
+/* ================= CONSTANTS ================= */
+
+const weekDays: {
+  key: WeekDay;
+  label: string;
+  apiLabel: string;
+}[] = [
+  {
+    key: "monday",
+    label: "Monday",
+    apiLabel: "Mon",
+  },
+  {
+    key: "tuesday",
+    label: "Tuesday",
+    apiLabel: "Tue",
+  },
+  {
+    key: "wednesday",
+    label: "Wednesday",
+    apiLabel: "Wed",
+  },
+  {
+    key: "thursday",
+    label: "Thursday",
+    apiLabel: "Thu",
+  },
+  {
+    key: "friday",
+    label: "Friday",
+    apiLabel: "Fri",
+  },
+  {
+    key: "saturday",
+    label: "Saturday",
+    apiLabel: "Sat",
+  },
+  {
+    key: "sunday",
+    label: "Sunday",
+    apiLabel: "Sun",
+  },
+];
+
+const createDefaultSchedule = (): StaffSchedule => ({
+  monday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  tuesday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  wednesday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  thursday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  friday: {
+    enabled: true,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  saturday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+  sunday: {
+    enabled: false,
+    startTime: "08:00",
+    endTime: "13:00",
+  },
+});
+
+/* ================= COMPONENT ================= */
+
 export default function CreateStaff() {
   const router = useRouter();
 
-  const { branchId: rawBranchId } =
-    useLocalSearchParams<{
-      branchId: string;
-    }>();
+  const {
+    branchId: rawBranchId,
+  } = useLocalSearchParams<{
+    branchId: string;
+  }>();
 
   const branchId = Array.isArray(rawBranchId)
     ? rawBranchId[0]
@@ -70,6 +180,8 @@ export default function CreateStaff() {
     departmentOrUnit: "",
     studentOrStaffId: "",
     password: "",
+    employmentType: "full-time",
+    schedule: createDefaultSchedule(),
   });
 
   const [passwordVisible, setPasswordVisible] =
@@ -83,8 +195,17 @@ export default function CreateStaff() {
     console.log("Branch ID:", branchId);
   }, [institutionId, branchId]);
 
+  /* ================= FORM UPDATES ================= */
+
   const updateField = (
-    field: keyof StaffForm,
+    field: keyof Pick<
+      StaffForm,
+      | "name"
+      | "email"
+      | "departmentOrUnit"
+      | "studentOrStaffId"
+      | "password"
+    >,
     value: string
   ) => {
     setForm((previousForm) => ({
@@ -92,12 +213,125 @@ export default function CreateStaff() {
       [field]: value,
     }));
 
-    if (error) {
-      setError("");
-    }
+    setError("");
   };
 
-  const validate = (): string => {
+  const updateEmploymentType = (
+    employmentType: EmploymentType
+  ) => {
+    setForm((previousForm) => ({
+      ...previousForm,
+      employmentType,
+    }));
+
+    setError("");
+  };
+
+  const updateScheduleField = (
+    day: WeekDay,
+    field: keyof DaySchedule,
+    value: string
+  ) => {
+    setForm((previousForm) => ({
+      ...previousForm,
+      schedule: {
+        ...previousForm.schedule,
+        [day]: {
+          ...previousForm.schedule[day],
+          [field]: value,
+        },
+      },
+    }));
+
+    setError("");
+  };
+
+  const toggleDay = (day: WeekDay) => {
+    setForm((previousForm) => ({
+      ...previousForm,
+      schedule: {
+        ...previousForm.schedule,
+        [day]: {
+          ...previousForm.schedule[day],
+          enabled: !previousForm.schedule[day].enabled,
+        },
+      },
+    }));
+
+    setError("");
+  };
+
+  /* ================= VALIDATION ================= */
+
+  const isValidTime = (time: string) => {
+    const timeParts = time.split(":");
+
+    if (timeParts.length !== 2) {
+      return false;
+    }
+
+    const hours = Number(timeParts[0]);
+    const minutes = Number(timeParts[1]);
+
+    return (
+      Number.isInteger(hours) &&
+      Number.isInteger(minutes) &&
+      hours >= 0 &&
+      hours <= 23 &&
+      minutes >= 0 &&
+      minutes <= 59
+    );
+  };
+
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time
+      .split(":")
+      .map(Number);
+
+    return hours * 60 + minutes;
+  };
+
+  const validateSchedule = () => {
+    if (form.employmentType === "full-time") {
+      return "";
+    }
+
+    const selectedDays = weekDays.filter(
+      (day) => form.schedule[day.key].enabled
+    );
+
+    if (selectedDays.length === 0) {
+      return "Please select at least one part-time working day.";
+    }
+
+    for (const day of selectedDays) {
+      const currentDay = form.schedule[day.key];
+
+      if (!isValidTime(currentDay.startTime)) {
+        return `${day.label}: enter a valid start time using HH:mm.`;
+      }
+
+      if (!isValidTime(currentDay.endTime)) {
+        return `${day.label}: enter a valid end time using HH:mm.`;
+      }
+
+      const startMinutes = timeToMinutes(
+        currentDay.startTime
+      );
+
+      const endMinutes = timeToMinutes(
+        currentDay.endTime
+      );
+
+      if (endMinutes <= startMinutes) {
+        return `${day.label}: end time must be later than start time.`;
+      }
+    }
+
+    return "";
+  };
+
+  const validate = () => {
     if (!form.name.trim()) {
       return "Please enter the staff member's full name.";
     }
@@ -134,92 +368,275 @@ export default function CreateStaff() {
       return "Branch ID was not found.";
     }
 
-    return "";
+    return validateSchedule();
   };
 
-  const handleSubmit = async () => {
-    if (loading) {
-      return;
+  /* ================= SHIFT PAYLOAD ================= */
+
+  const getSelectedScheduleDays = () => {
+    return weekDays.filter(
+      (day) => form.schedule[day.key].enabled
+    );
+  };
+
+  const getShiftTimeRange = () => {
+    const selectedDays = getSelectedScheduleDays();
+
+    if (selectedDays.length === 0) {
+      return null;
     }
 
-    const validationError = validate();
+    const firstDay = form.schedule[selectedDays[0].key];
 
-    if (validationError) {
-      setError(validationError);
-      return;
+    const allSameTime = selectedDays.every((day) => {
+      const currentDay = form.schedule[day.key];
+
+      return (
+        currentDay.startTime === firstDay.startTime &&
+        currentDay.endTime === firstDay.endTime
+      );
+    });
+
+    if (!allSameTime) {
+      return null;
     }
 
-    try {
-      setLoading(true);
-      setError("");
+    return {
+      startTime: firstDay.startTime,
+      endTime: firstDay.endTime,
+    };
+  };
 
-      const createPayload = {
-        name: form.name.trim(),
-        email: form.email.trim().toLowerCase(),
-        departmentOrUnit:
-          form.departmentOrUnit.trim(),
-        studentOrStaffId:
-          form.studentOrStaffId.trim(),
-        password: form.password,
-        role: ["staff"],
-      };
+  /* ================= SUBMIT ================= */
 
-      console.log(
-        "Creating staff:",
-        createPayload
-      );
+const handleSubmit = async () => {
+  if (loading) {
+    return;
+  }
 
-      const createResponse =
-        await createStaffByAdmin(createPayload);
+  const validationError = validate();
 
-      const createdUser =
-        createResponse?.data?.user ||
-        createResponse?.data;
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
 
-      if (!createdUser?._id) {
-        throw new Error(
-          "Staff was created but no user ID was returned."
-        );
-      }
+  try {
+    setLoading(true);
+    setError("");
 
-      console.log(
-        "Staff created:",
-        createdUser._id
-      );
+    const createPayload = {
+      name: form.name.trim(),
+      email: form.email.trim().toLowerCase(),
+      departmentOrUnit: form.departmentOrUnit.trim(),
+      studentOrStaffId: form.studentOrStaffId.trim(),
+      password: form.password,
+      role: ["staff"],
+      employmentType: form.employmentType,
+    };
 
-      await assignStaffToBranchByAdmin(
-        institutionId!,
-        createdUser._id,
-        branchId!
-      );
+    console.log("📤 Creating staff payload:", createPayload);
 
-      console.log(
-        "Staff created and assigned successfully."
-      );
+    const createResponse = await createStaffByAdmin(createPayload);
 
-      router.replace({
-        pathname:
-          "/dashboard/ownerDashboard/institution/[institutionId]/branches/[branchId]",
-        params: {
-          institutionId: institutionId!,
-          branchId: branchId!,
-        },
+    console.log("📥 Staff creation response:", createResponse);
+
+    const createdUser =
+      createResponse?.data?.user ||
+      createResponse?.data;
+
+    console.log("🔍 Extracted createdUser:", createdUser);
+
+    if (!createdUser?._id) {
+      console.error("❌ Staff creation failed - no _id:", {
+        createResponse,
+        createdUser,
       });
-    } catch (submitError: any) {
-      console.log(
-        "Create staff error:",
-        submitError?.response?.data || submitError
+      throw new Error(
+        "Staff was created but no user ID was returned."
       );
-
-      setError(
-        submitError?.response?.data?.message ||
-          submitError?.message ||
-          "Failed to create and assign staff."
-      );
-    } finally {
-      setLoading(false);
     }
-  };
+
+    const createdUserId = createdUser._id;
+
+    console.log("✅ Staff created with ID:", createdUserId);
+
+    await assignStaffToBranchByAdmin(
+      institutionId!,
+      createdUserId,
+      branchId!
+    );
+
+    console.log("✅ Staff assigned to branch:", branchId);
+
+    /*
+     * Full-time staff:
+     * No shift is created. They follow branch rules.
+     */
+
+    if (form.employmentType === "part-time") {
+      const selectedDays = getSelectedScheduleDays();
+      const repeatDays = selectedDays.map((day) => day.apiLabel);
+      const shiftTimeRange = getShiftTimeRange();
+
+      console.log("🕐 Part-time shift config:", {
+        selectedDays,
+        repeatDays,
+        shiftTimeRange,
+      });
+
+      if (shiftTimeRange) {
+        /*
+         * All selected days use the same time range,
+         * so one shift is enough.
+         */
+        const shiftPayload = {
+          name: `${form.name.trim()} Part-time Shift`,
+          startTime: shiftTimeRange.startTime,
+          endTime: shiftTimeRange.endTime,
+          gracePeriod: 10,
+          branchId: branchId!,
+          repeatDays,
+        };
+
+        console.log("📤 Creating shift payload:", shiftPayload);
+
+        const shiftResponse = await createShiftByAdmin(shiftPayload);
+
+        console.log("📥 Shift response:", shiftResponse);
+
+        // ✅ FIXED: Backend returns { data: { data: {...} } }
+        const createdShift = shiftResponse?.data?.data;
+
+        console.log("🔍 Extracted createdShift:", createdShift);
+
+        if (!createdShift?._id) {
+          console.error("❌ Shift creation failed - no _id:", {
+            shiftResponse,
+            createdShift,
+          });
+          throw new Error(
+            "Staff was created, but the part-time shift was not created."
+          );
+        }
+
+        console.log("✅ Shift created with ID:", createdShift._id);
+
+        await assignStaffToShiftByAdmin(
+          createdShift._id,
+          [createdUserId]
+        );
+
+        console.log("✅ Staff assigned to shift:", createdShift._id);
+      } else {
+        /*
+         * Different days have different times.
+         * Create one shift per unique time range.
+         */
+        const shiftGroups = new Map<
+          string,
+          {
+            startTime: string;
+            endTime: string;
+            repeatDays: string[];
+          }
+        >();
+
+        selectedDays.forEach((day) => {
+          const currentDay = form.schedule[day.key];
+
+          const groupKey = `${currentDay.startTime}-${currentDay.endTime}`;
+
+          const existingGroup = shiftGroups.get(groupKey);
+
+          if (existingGroup) {
+            existingGroup.repeatDays.push(day.apiLabel);
+          } else {
+            shiftGroups.set(groupKey, {
+              startTime: currentDay.startTime,
+              endTime: currentDay.endTime,
+              repeatDays: [day.apiLabel],
+            });
+          }
+        });
+
+        console.log("🔄 Shift groups:", Array.from(shiftGroups.entries()));
+
+        for (const [groupKey, shiftGroup] of shiftGroups.entries()) {
+          console.log("📤 Creating shift group payload:", {
+            groupKey,
+            shiftGroup,
+          });
+
+          const shiftResponse = await createShiftByAdmin({
+            name: `${form.name.trim()} Part-time Shift`,
+            startTime: shiftGroup.startTime,
+            endTime: shiftGroup.endTime,
+            gracePeriod: 10,
+            branchId: branchId!,
+            repeatDays: shiftGroup.repeatDays,
+          });
+
+          console.log("📥 Shift group response:", shiftResponse);
+
+          // ✅ FIXED: Backend returns { data: { data: {...} } }
+          const createdShift = shiftResponse?.data?.data;
+
+          console.log("🔍 Extracted createdShift:", createdShift);
+
+          if (!createdShift?._id) {
+            console.error(
+              "❌ Shift group creation failed - no _id:",
+              {
+                groupKey,
+                shiftResponse,
+                createdShift,
+              }
+            );
+            throw new Error(
+              "Staff was created, but one of the part-time shifts was not created."
+            );
+          }
+
+          console.log("✅ Shift group created with ID:", createdShift._id);
+
+          await assignStaffToShiftByAdmin(
+            createdShift._id,
+            [createdUserId]
+          );
+
+          console.log("✅ Staff assigned to shift group:", createdShift._id);
+        }
+      }
+    }
+
+    console.log("✅ Staff and schedule created successfully.");
+
+    router.replace({
+      pathname:
+        "/dashboard/ownerDashboard/institution/[institutionId]/branches/[branchId]",
+      params: {
+        institutionId: institutionId!,
+        branchId: branchId!,
+      },
+    });
+  } catch (submitError: any) {
+    console.error("❌ Create staff error:", {
+      message: submitError?.message,
+      status: submitError?.response?.status,
+      data: submitError?.response?.data,
+      fullError: submitError,
+    });
+
+    setError(
+      submitError?.response?.data?.message ||
+        submitError?.message ||
+        "Failed to create and assign staff."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (profileLoading) {
     return (
@@ -239,8 +656,6 @@ export default function CreateStaff() {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
-
-      {/* ================= HEADER ================= */}
 
       <LinearGradient
         colors={["#075985", "#0284C7", "#0EA5E9"]}
@@ -296,12 +711,12 @@ export default function CreateStaff() {
         <View style={styles.heroDecorationTwo} />
       </LinearGradient>
 
-      {/* ================= FORM ================= */}
-
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={
-          Platform.OS === "ios" ? "padding" : undefined
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
         }
       >
         <ScrollView
@@ -377,6 +792,267 @@ export default function CreateStaff() {
               }
             />
 
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>
+                Employment type
+              </Text>
+
+              <View style={styles.typeRow}>
+                <Pressable
+                  style={[
+                    styles.typeOption,
+                    form.employmentType ===
+                      "full-time" &&
+                      styles.typeOptionSelected,
+                  ]}
+                  onPress={() =>
+                    updateEmploymentType(
+                      "full-time"
+                    )
+                  }
+                >
+                  <Ionicons
+                    name="briefcase-outline"
+                    size={19}
+                    color={
+                      form.employmentType ===
+                      "full-time"
+                        ? "#0284C7"
+                        : "#64748B"
+                    }
+                  />
+
+                  <View style={styles.typeTextContent}>
+                    <Text style={styles.typeTitle}>
+                      Full-time
+                    </Text>
+
+                    <Text style={styles.typeSubtitle}>
+                      Follows branch working hours
+                    </Text>
+                  </View>
+
+                  {form.employmentType ===
+                    "full-time" && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#0284C7"
+                    />
+                  )}
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.typeOption,
+                    form.employmentType ===
+                      "part-time" &&
+                      styles.typeOptionSelectedPurple,
+                  ]}
+                  onPress={() =>
+                    updateEmploymentType(
+                      "part-time"
+                    )
+                  }
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={19}
+                    color={
+                      form.employmentType ===
+                      "part-time"
+                        ? "#7C3AED"
+                        : "#64748B"
+                    }
+                  />
+
+                  <View style={styles.typeTextContent}>
+                    <Text style={styles.typeTitle}>
+                      Part-time
+                    </Text>
+
+                    <Text style={styles.typeSubtitle}>
+                      Assign a scheduled shift
+                    </Text>
+                  </View>
+
+                  {form.employmentType ===
+                    "part-time" && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#7C3AED"
+                    />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+
+            {form.employmentType === "part-time" && (
+              <View style={styles.scheduleSection}>
+                <View style={styles.scheduleHeader}>
+                  <View style={styles.scheduleHeaderIcon}>
+                    <Ionicons
+                      name="calendar-outline"
+                      size={20}
+                      color="#7C3AED"
+                    />
+                  </View>
+
+                  <View style={styles.scheduleHeaderContent}>
+                    <Text style={styles.scheduleTitle}>
+                      Part-time shift
+                    </Text>
+
+                    <Text style={styles.scheduleSubtitle}>
+                      Select working days and define the hours for each day.
+                    </Text>
+                  </View>
+                </View>
+
+                {weekDays.map((day) => {
+                  const daySchedule =
+                    form.schedule[day.key];
+
+                  return (
+                    <View
+                      key={day.key}
+                      style={styles.dayScheduleCard}
+                    >
+                      <View style={styles.dayHeader}>
+                        <View>
+                          <Text style={styles.dayLabel}>
+                            {day.label}
+                          </Text>
+
+                          <Text style={styles.dayStatus}>
+                            {daySchedule.enabled
+                              ? "Scheduled"
+                              : "Not scheduled"}
+                          </Text>
+                        </View>
+
+                        <Pressable
+                          style={[
+                            styles.dayToggle,
+                            daySchedule.enabled &&
+                              styles.dayToggleActive,
+                          ]}
+                          onPress={() =>
+                            toggleDay(day.key)
+                          }
+                        >
+                          <View
+                            style={[
+                              styles.dayToggleCircle,
+                              daySchedule.enabled &&
+                                styles.dayToggleCircleActive,
+                            ]}
+                          />
+                        </Pressable>
+                      </View>
+
+                      {daySchedule.enabled && (
+                        <View
+                          style={styles.scheduleInputsRow}
+                        >
+                          <View
+                            style={
+                              styles.scheduleInputGroup
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.scheduleInputLabel
+                              }
+                            >
+                              Start
+                            </Text>
+
+                            <View
+                              style={
+                                styles.smallInputWrapper
+                              }
+                            >
+                              <Ionicons
+                                name="time-outline"
+                                size={15}
+                                color="#7C3AED"
+                              />
+
+                              <TextInput
+                                value={
+                                  daySchedule.startTime
+                                }
+                                onChangeText={(value) =>
+                                  updateScheduleField(
+                                    day.key,
+                                    "startTime",
+                                    value
+                                  )
+                                }
+                                placeholder="08:00"
+                                placeholderTextColor="#94A3B8"
+                                style={
+                                  styles.smallInput
+                                }
+                                maxLength={5}
+                              />
+                            </View>
+                          </View>
+
+                          <View
+                            style={
+                              styles.scheduleInputGroup
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.scheduleInputLabel
+                              }
+                            >
+                              End
+                            </Text>
+
+                            <View
+                              style={
+                                styles.smallInputWrapper
+                              }
+                            >
+                              <Ionicons
+                                name="time-outline"
+                                size={15}
+                                color="#7C3AED"
+                              />
+
+                              <TextInput
+                                value={
+                                  daySchedule.endTime
+                                }
+                                onChangeText={(value) =>
+                                  updateScheduleField(
+                                    day.key,
+                                    "endTime",
+                                    value
+                                  )
+                                }
+                                placeholder="13:00"
+                                placeholderTextColor="#94A3B8"
+                                style={
+                                  styles.smallInput
+                                }
+                                maxLength={5}
+                              />
+                            </View>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             <InputField
               label="Password"
               placeholder="Create a password"
@@ -387,7 +1063,8 @@ export default function CreateStaff() {
               passwordVisible={passwordVisible}
               onTogglePassword={() =>
                 setPasswordVisible(
-                  (previousValue) => !previousValue
+                  (previousValue) =>
+                    !previousValue
                 )
               }
               onChangeText={(value) =>
@@ -403,13 +1080,10 @@ export default function CreateStaff() {
               />
 
               <Text style={styles.passwordHintText}>
-                Use at least 6 characters for the temporary
-                password.
+                Use at least 6 characters for the temporary password.
               </Text>
             </View>
           </View>
-
-          {/* ================= ASSIGNMENT CARD ================= */}
 
           <View style={styles.assignmentCard}>
             <View style={styles.assignmentIcon}>
@@ -426,8 +1100,7 @@ export default function CreateStaff() {
               </Text>
 
               <Text style={styles.assignmentText}>
-                This staff member will be created and assigned to
-                the selected branch automatically.
+                This staff member will be created and assigned to the selected branch automatically.
               </Text>
             </View>
 
@@ -437,8 +1110,6 @@ export default function CreateStaff() {
               color="#10B981"
             />
           </View>
-
-          {/* ================= ERROR ================= */}
 
           {error.length > 0 && (
             <View style={styles.errorCard}>
@@ -457,8 +1128,6 @@ export default function CreateStaff() {
           <View style={styles.bottomSpace} />
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* ================= FOOTER ================= */}
 
       <View style={styles.footer}>
         <Pressable
@@ -564,6 +1233,7 @@ function InputField({
     </View>
   );
 }
+
 
 /* ================= STYLES ================= */
 
@@ -808,6 +1478,184 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  /* ================= EMPLOYMENT TYPE ================= */
+
+  typeRow: {
+    gap: 10,
+  },
+
+  typeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 70,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 15,
+  },
+
+  typeOptionSelected: {
+    backgroundColor: "#F0F9FF",
+    borderColor: "#7DD3FC",
+  },
+
+  typeOptionSelectedPurple: {
+    backgroundColor: "#FAF5FF",
+    borderColor: "#D8B4FE",
+  },
+
+  typeTextContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  typeTitle: {
+    color: "#0F172A",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  typeSubtitle: {
+    marginTop: 3,
+    color: "#64748B",
+    fontSize: 11,
+  },
+
+  /* ================= PART-TIME SCHEDULE ================= */
+
+  scheduleSection: {
+    marginTop: 4,
+    marginBottom: 18,
+    padding: 14,
+    backgroundColor: "#FAF5FF",
+    borderWidth: 1,
+    borderColor: "#E9D5FF",
+    borderRadius: 18,
+  },
+
+  scheduleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+
+  scheduleHeaderIcon: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3E8FF",
+    borderRadius: 12,
+  },
+
+  scheduleHeaderContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  scheduleTitle: {
+    color: "#581C87",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  scheduleSubtitle: {
+    marginTop: 3,
+    color: "#7E22CE",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  dayScheduleCard: {
+    marginBottom: 9,
+    padding: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E9D5FF",
+    borderRadius: 14,
+  },
+
+  dayHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  dayLabel: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  dayStatus: {
+    marginTop: 3,
+    color: "#94A3B8",
+    fontSize: 10,
+  },
+
+  dayToggle: {
+    width: 43,
+    height: 25,
+    justifyContent: "center",
+    paddingHorizontal: 3,
+    backgroundColor: "#CBD5E1",
+    borderRadius: 20,
+  },
+
+  dayToggleActive: {
+    backgroundColor: "#A855F7",
+  },
+
+  dayToggleCircle: {
+    width: 19,
+    height: 19,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+  },
+
+  dayToggleCircleActive: {
+    alignSelf: "flex-end",
+  },
+
+  scheduleInputsRow: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 12,
+  },
+
+  scheduleInputGroup: {
+    flex: 1,
+  },
+
+  scheduleInputLabel: {
+    marginBottom: 5,
+    color: "#64748B",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  smallInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 40,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+  },
+
+  smallInput: {
+    flex: 1,
+    marginLeft: 5,
+    padding: 0,
+    color: "#0F172A",
+    fontSize: 11,
+  },
+
+  /* ================= ASSIGNMENT ================= */
+
   assignmentCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -847,6 +1695,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  /* ================= ERROR ================= */
+
   errorCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -870,6 +1720,8 @@ const styles = StyleSheet.create({
   bottomSpace: {
     height: 20,
   },
+
+  /* ================= FOOTER ================= */
 
   footer: {
     flexDirection: "row",
