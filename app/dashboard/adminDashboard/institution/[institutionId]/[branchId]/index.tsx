@@ -7,18 +7,17 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
-import BottomNav from "@/components/BottomNav";
 import { useAuth } from "@/context/AuthContext";
 import { useBranchOverview } from "@/hooks/useAdminDashboard";
 
 import Staff from "./staff";
 import BranchAttendance from "./logs";
+import StudentsTab from "./students/Students";
 
 /* ================= COLORS ================= */
 
@@ -48,6 +47,7 @@ const COLORS = {
 type BranchTab =
   | "staff"
   | "Attendance"
+  | "Students";
 
 type Branch = {
   _id: string;
@@ -97,7 +97,6 @@ export default function BranchIndexScreen() {
   const {
     data: rawOverview,
     isLoading: dashboardLoading,
-    isFetching,
     error,
     refetch,
   } = useBranchOverview(branchId);
@@ -158,7 +157,8 @@ export default function BranchIndexScreen() {
         </Text>
 
         <Text style={styles.errorDescription}>
-          Your account does not have a valid institution ID or branch ID.
+          Your account does not have a valid
+          institution ID or branch ID.
         </Text>
 
         <Text style={styles.debugText}>
@@ -240,10 +240,12 @@ export default function BranchIndexScreen() {
 
   return (
     <View style={styles.screen}>
+
       {/* ================= HEADER ================= */}
 
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
+
           <View style={styles.headerBranch}>
             <Text style={styles.headerEyebrow}>
               MY BRANCH
@@ -278,8 +280,6 @@ export default function BranchIndexScreen() {
               </Text>
             </View>
 
-            {/* Person icon instead of image/logo */}
-
             <View style={styles.adminAvatar}>
               <Ionicons
                 name="person"
@@ -288,9 +288,11 @@ export default function BranchIndexScreen() {
               />
             </View>
           </Pressable>
+
         </View>
 
         <View style={styles.branchMetaRow}>
+
           <View style={styles.branchIcon}>
             <Ionicons
               name="business-outline"
@@ -300,6 +302,7 @@ export default function BranchIndexScreen() {
           </View>
 
           <View style={styles.branchMetaContent}>
+
             <Text
               style={styles.branchAddress}
               numberOfLines={2}
@@ -309,6 +312,7 @@ export default function BranchIndexScreen() {
             </Text>
 
             <View style={styles.statusRow}>
+
               <View
                 style={[
                   styles.statusDot,
@@ -334,7 +338,9 @@ export default function BranchIndexScreen() {
                 Radius:{" "}
                 {branch.radiusMeters || 100}m
               </Text>
+
             </View>
+
           </View>
         </View>
       </View>
@@ -342,6 +348,7 @@ export default function BranchIndexScreen() {
       {/* ================= TABS ================= */}
 
       <View style={styles.tabsWrapper}>
+
         <TabButton
           label="Staff"
           icon="people-outline"
@@ -359,24 +366,44 @@ export default function BranchIndexScreen() {
             setActiveTab("Attendance")
           }
         />
+
+        <TabButton
+          label="Students"
+          icon="school-outline"
+          active={activeTab === "Students"}
+          onPress={() =>
+            setActiveTab("Students")
+          }
+        />
+
       </View>
 
       {/* ================= CONTENT ================= */}
 
-    {activeTab === "staff" && (
-  <Staff
-    institutionId={institutionId}
-    branchId={branchId}
-    branchName={branch.name}
-  />
-)}
+      {activeTab === "staff" && (
+        <Staff
+          institutionId={institutionId}
+          branchId={branchId}
+          branchName={branch.name}
+        />
+      )}
 
-{activeTab === "Attendance" && (
-  <View style={styles.attendanceContent}>
-    <BranchAttendance branchId={branchId} />
-  </View>
-)}
- 
+      {activeTab === "Attendance" && (
+        <View style={styles.attendanceContent}>
+          <BranchAttendance
+            branchId={branchId}
+          />
+        </View>
+      )}
+
+      {activeTab === "Students" && (
+        <View style={styles.studentsContent}>
+          <StudentsTab
+            institutionId={institutionId}
+          />
+        </View>
+      )}
+
     </View>
   );
 }
@@ -392,6 +419,7 @@ function LoadingState({
 }) {
   return (
     <View style={styles.center}>
+
       <View style={styles.loadingIcon}>
         <ActivityIndicator
           size="large"
@@ -408,6 +436,7 @@ function LoadingState({
           Branch ID: {branchId}
         </Text>
       )}
+
     </View>
   );
 }
@@ -437,7 +466,9 @@ function TabButton({
         name={icon}
         size={18}
         color={
-          active ? COLORS.white : PRIMARY
+          active
+            ? COLORS.white
+            : PRIMARY
         }
       />
 
@@ -454,88 +485,32 @@ function TabButton({
   );
 }
 
-/* ================= PLACEHOLDER ================= */
-
-function TabPlaceholder({
-  icon,
-  title,
-  description,
-  onPress,
-  buttonText,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description: string;
-  onPress?: () => void;
-  buttonText: string;
-}) {
-  return (
-    <View style={styles.placeholderCard}>
-      <View style={styles.placeholderIcon}>
-        <Ionicons
-          name={icon}
-          size={30}
-          color={PRIMARY}
-        />
-      </View>
-
-      <Text style={styles.placeholderTitle}>
-        {title}
-      </Text>
-
-      <Text
-        style={styles.placeholderDescription}
-      >
-        {description}
-      </Text>
-
-      <Pressable
-        style={styles.placeholderButton}
-        onPress={onPress}
-      >
-        <Text style={styles.placeholderButtonText}>
-          {buttonText}
-        </Text>
-
-        <Ionicons
-          name="arrow-forward"
-          size={16}
-          color={COLORS.white}
-        />
-      </Pressable>
-    </View>
-  );
-}
-
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
+
   screen: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
+
+  /* ================= HEADER ================= */
 
   header: {
     paddingTop: 50,
     paddingHorizontal: 18,
     paddingBottom: 19,
-    backgroundColor: COLORS.white,
+    backgroundColor:
+      COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor:
+      COLORS.border,
   },
 
   headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
-  },
-
-  backButton: {
-    width: 42,
-    height: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 14,
   },
 
   headerBranch: {
@@ -587,11 +562,15 @@ const styles = StyleSheet.create({
     height: 37,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: PRIMARY_SOFT,
+    backgroundColor:
+      PRIMARY_SOFT,
     borderWidth: 2,
-    borderColor: PRIMARY_BORDER,
+    borderColor:
+      PRIMARY_BORDER,
     borderRadius: 19,
   },
+
+  /* ================= BRANCH META ================= */
 
   branchMetaRow: {
     flexDirection: "row",
@@ -604,9 +583,11 @@ const styles = StyleSheet.create({
     height: 47,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: PRIMARY_SOFT,
+    backgroundColor:
+      PRIMARY_SOFT,
     borderWidth: 1,
-    borderColor: PRIMARY_BORDER,
+    borderColor:
+      PRIMARY_BORDER,
     borderRadius: 15,
   },
 
@@ -635,11 +616,13 @@ const styles = StyleSheet.create({
   },
 
   activeDot: {
-    backgroundColor: "#10B981",
+    backgroundColor:
+      "#10B981",
   },
 
   disabledDot: {
-    backgroundColor: "#F97316",
+    backgroundColor:
+      "#F97316",
   },
 
   statusText: {
@@ -658,14 +641,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 
+  /* ================= TABS ================= */
+
   tabsWrapper: {
     flexDirection: "row",
     marginHorizontal: 16,
     marginTop: 16,
     padding: 4,
-    backgroundColor: PRIMARY_SOFT,
+    backgroundColor:
+      PRIMARY_SOFT,
     borderWidth: 1,
-    borderColor: PRIMARY_BORDER,
+    borderColor:
+      PRIMARY_BORDER,
     borderRadius: 15,
   },
 
@@ -696,79 +683,30 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: COLORS.white,
   },
+
+  /* ================= ATTENDANCE ================= */
+
   attendanceContent: {
-  flex: 1,
-  paddingTop: 4,
-},
-
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 125,
+    flex: 1,
+    paddingTop: 4,
   },
 
-  placeholderCard: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 330,
-    paddingHorizontal: 25,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: PRIMARY_BORDER,
-    borderRadius: 22,
-    elevation: 2,
+  /* ================= STUDENTS ================= */
+
+  studentsContent: {
+    flex: 1,
+    paddingTop: 4,
   },
 
-  placeholderIcon: {
-    width: 64,
-    height: 64,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PRIMARY_SOFT,
-    borderRadius: 21,
-  },
-
-  placeholderTitle: {
-    marginTop: 16,
-    color: COLORS.text,
-    fontSize: 19,
-    fontWeight: "900",
-  },
-
-  placeholderDescription: {
-    maxWidth: 270,
-    marginTop: 7,
-    color: COLORS.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: "center",
-  },
-
-  placeholderButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    backgroundColor: PRIMARY,
-    borderRadius: 12,
-  },
-
-  placeholderButtonText: {
-    marginRight: 7,
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: "900",
-  },
+  /* ================= LOADING ================= */
 
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 25,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
   },
 
   loadingIcon: {
@@ -776,7 +714,8 @@ const styles = StyleSheet.create({
     height: 68,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: PRIMARY_SOFT,
+    backgroundColor:
+      PRIMARY_SOFT,
     borderRadius: 22,
   },
 
@@ -786,12 +725,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
+  /* ================= ERROR ================= */
+
   emptyIcon: {
     width: 64,
     height: 64,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.dangerLight,
+    backgroundColor:
+      COLORS.dangerLight,
     borderRadius: 21,
   },
 

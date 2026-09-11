@@ -421,7 +421,7 @@ export default function StaffProfile() {
 
         {/* LOGOUT */}
 
-        {/* <Pressable
+        <Pressable
           style={styles.logoutButton}
           onPress={logout}
         >
@@ -434,7 +434,7 @@ export default function StaffProfile() {
           <Text style={styles.logoutText}>
             Log out
           </Text>
-        </Pressable> */}
+        </Pressable>
 
         <Text style={styles.footerText}>
           Your profile information is used to manage your Clockee attendance account.

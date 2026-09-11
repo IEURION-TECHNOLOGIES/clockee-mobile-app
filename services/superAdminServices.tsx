@@ -1,3 +1,4 @@
+// src/services/admin.ts
 import API from "@/api/baseUrl";
 
 /* ================= REGISTER & CREATE ================= */
@@ -245,11 +246,6 @@ export type AssignStaffToShiftResponse = {
   data?: Shift | { shift: Shift };
 };
 
-/**
- * Create a shift for a branch.
- *
- * POST /admin/shifts
- */
 export const createShiftByAdmin = (
   data: CreateShiftPayload
 ) => {
@@ -289,6 +285,29 @@ export const createShiftByAdmin = (
   );
 };
 
+export const assignStaffToShiftByAdmin = (
+  shiftId: string,
+  userIds: string[]
+) => {
+  if (!shiftId.trim()) {
+    throw new Error(
+      "Shift ID is required to assign staff."
+    );
+  }
+
+  if (!userIds.length) {
+    throw new Error(
+      "At least one user ID is required."
+    );
+  }
+
+  return API.patch<AssignStaffToShiftResponse>(
+    `/admin/shifts/${shiftId}/assign`,
+    {
+      userIds,
+    }
+  );
+};
 
 /* ================= MANUAL OVERRIDE ================= */
 
@@ -332,41 +351,10 @@ export const manualOverrideClock = (
   );
 };
 
-/**
- * Assign one or more staff members to a shift.
- *
- * PATCH /admin/shifts/:id/assign
- */
-export const assignStaffToShiftByAdmin = (
-  shiftId: string,
-  userIds: string[]
-) => {
-  if (!shiftId.trim()) {
-    throw new Error(
-      "Shift ID is required to assign staff."
-    );
-  }
-
-  if (!userIds.length) {
-    throw new Error(
-      "At least one user ID is required."
-    );
-  }
-
-  return API.patch<AssignStaffToShiftResponse>(
-    `/admin/shifts/${shiftId}/assign`,
-    {
-      userIds,
-    }
-  );
-};
-
 /* ================= DASHBOARD OVERVIEW ================= */
 
 export const getDashboardOverview = () =>
   API.get("/admin/dashboard/overview");
-
-/* ================= OWNER DASHBOARD OVERVIEW ================= */
 
 export const getOwnerDashboardOverview = () =>
   API.get("/admin/owner/dashboard/overview");
@@ -934,3 +922,304 @@ export async function getBranchAttendanceLogs(
 
   return response.data;
 }
+/* ================= PARENT PORTAL ================= */
+/* ARCHITECTURE BOUNDARY: Parent accounts are strictly read-only.
+   No clocking or attendance-edit calls belong in this file. */
+
+export type ParentChildToday = {
+  attendance: "present" | "absent" | "late" | "excused" | string;
+  attendanceNotes: string | null;
+  clockIn: string | null;
+  clockOut: string | null;
+};
+
+export type ParentChild = {
+  id: string;
+  name: string;
+  email: string;
+  studentOrStaffId: string;
+  today: ParentChildToday;
+};
+
+export type ParentDashboardResponse = {
+  success: boolean;
+  data: {
+    parent: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string;
+    };
+    institution: {
+      name: string;
+      type: string;
+    };
+    children: ParentChild[];
+  };
+};
+
+export const getParentDashboard = () =>
+  API.get<ParentDashboardResponse>("/parent/dashboard");
+
+export const getParentChildren = () =>
+  API.get("/parent/children");
+
+export type AttendanceStatus = "present" | "absent" | "late" | "excused";
+
+export type ChildAttendanceFilters = {
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string; // YYYY-MM-DD
+};
+
+export type ChildAttendanceRecord = {
+  _id: string;
+  studentId: string;
+  institutionId: string;
+  date: string;
+  status: AttendanceStatus;
+  notes: string | null;
+  recordedBy: string;
+  recordedAt: string;
+  source: string;
+};
+
+export type ChildAttendanceResponse = {
+  success: boolean;
+  data: {
+    student: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string;
+      studentOrStaffId: string;
+    };
+    records: ChildAttendanceRecord[];
+  };
+};
+
+export const getChildAttendance = (
+  studentId: string,
+  filters: ChildAttendanceFilters = {}
+) => {
+  if (!studentId) {
+    throw new Error("studentId is required to fetch attendance.");
+  }
+
+  const params: Record<string, string> = {};
+  if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+  if (filters.dateTo) params.dateTo = filters.dateTo;
+
+  return API.get<ChildAttendanceResponse>(
+    `/parent/children/${studentId}/attendance`,
+    { params }
+  );
+};
+
+export const getChildClockHistory = (studentId: string) => {
+  if (!studentId) {
+    throw new Error("studentId is required to fetch clock history.");
+  }
+
+  // SECURITY RESTRICTION: backend 403s if studentId isn't linked to this parent.
+  return API.get(`/parent/children/${studentId}/clock-history`);
+};
+
+/* ================= STUDENT CLOCKING (STAFF-ASSISTED) ================= */
+/* =========================================================
+   STUDENT CLOCKING (STAFF-ASSISTED)
+========================================================= */
+
+export type StudentClockInPayload = {
+  gps?: {
+    lat: number;
+    lng: number;
+  };
+  deviceInfo?: string;
+  mode?: "qr" | "silent";
+};
+
+export type StudentClockInResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    log: {
+      _id: string;
+      mode: string;
+    };
+    parentNotification?: {
+      sent: number;
+      failed: number;
+    };
+  };
+};
+
+export const studentClockIn = (
+  studentId: string,
+  payload: StudentClockInPayload
+) =>
+  API.post<StudentClockInResponse>(
+    `/clock/students/${studentId}/clock-in`,
+    payload
+  );
+  
+/* ================= BULK STUDENT ATTENDANCE (STAFF) ================= */
+
+export type BulkAttendanceRecordInput = {
+  studentId: string;
+  status: "present" | "absent" | "late" | "excused";
+  notes?: string;
+};
+
+export type BulkAttendancePayload = {
+  date?: string; // YYYY-MM-DD, defaults to today on backend
+  records: BulkAttendanceRecordInput[];
+};
+
+export type BulkAttendanceResponse = {
+  success: boolean;
+  data: {
+    date: string;
+    records: {
+      studentId: string;
+      success: boolean;
+      record?: any;
+      message?: string;
+    }[];
+  };
+};
+
+export const bulkUpsertStudentAttendance = (payload: BulkAttendancePayload) =>
+  API.post<BulkAttendanceResponse>("/clock/students/attendance", payload);
+
+/* ================= STUDENT ROSTER WITH ATTENDANCE (STAFF) ================= */
+
+export type StudentRosterFilters = {
+  departmentId?: string;
+  search?: string;
+  date?: string; // YYYY-MM-DD
+};
+
+export type StudentRosterItem = {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  studentOrStaffId: string;
+  departmentId?: {
+    _id: string;
+    name: string;
+    code: string;
+  };
+  departmentName?: string;
+  status: "present" | "absent" | "late" | "excused";
+  notes?: string | null;
+};
+
+export type StudentRosterResponse = {
+  success: boolean;
+  date: string;
+  count: number;
+  data: StudentRosterItem[];
+};
+
+export const getStudentRoster = (filters: StudentRosterFilters = {}) =>
+  API.get<StudentRosterResponse>("/clock/students/roster", {
+    params: filters,
+  });
+
+/* ================= STUDENTS LIST (STAFF PICKER) ================= */
+
+export type StudentsListFilters = {
+  search?: string;
+  departmentId?: string;
+};
+
+export type StudentListItem = {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  studentOrStaffId: string;
+  departmentId?: {
+    _id: string;
+    name: string;
+    code: string;
+  };
+  departmentName?: string;
+};
+
+export type StudentsListResponse = {
+  success: boolean;
+  count: number;
+  data: StudentListItem[];
+};
+
+export const getStudentsList = (filters: StudentsListFilters = {}) =>
+  API.get<StudentsListResponse>("/clock/students", {
+    params: filters,
+  });
+
+/* ================= ADMIN: STUDENTS MANAGEMENT ================= */
+
+export type CreateStudentPayload = {
+  name: string;
+  email: string;
+  studentId: string;
+  phone: string;
+  departmentId?: string;
+  branchId?: string;
+  password?: string;
+
+  // Parent 1
+  parentName?: string;
+  parentEmail?: string;
+  parentPhone?: string;
+  parentPassword?: string;
+
+  // Parent 2 (optional)
+  parent2Name?: string;
+  parent2Email?: string;
+  parent2Phone?: string;
+  parent2Password?: string;
+};
+
+export const createStudent = (data: CreateStudentPayload) =>
+  API.post("/admin/students", data);
+
+/* ================= ADMIN: BULK UPLOAD STUDENTS ================= */
+
+// multipart/form-data CSV upload
+export const bulkUploadStudents = (formData: FormData) =>
+  API.post("/admin/students/bulk", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+/* ================= ADMIN: STUDENTS LIST & DETAIL ================= */
+
+export type AdminStudentsFilters = {
+  role?: "student";
+  search?: string;
+  departmentId?: string;
+  branchId?: string;
+  page?: number;
+  limit?: number;
+};
+
+export const getAdminStudents = (filters: AdminStudentsFilters = {}) =>
+  API.get("/admin/institution/users", {
+    params: {
+      ...filters,
+      role: filters.role ?? "student",
+    },
+  });
+
+export const getAdminStudentById = (id: string) =>
+  API.get(`/admin/institution/user/${id}`);
+
+export const getStudentsImportTemplate = () =>
+  API.get("/admin/students/import-template", {
+    responseType: "blob",
+  });
+  

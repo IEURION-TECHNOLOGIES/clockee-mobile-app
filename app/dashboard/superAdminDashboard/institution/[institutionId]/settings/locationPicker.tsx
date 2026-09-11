@@ -33,8 +33,8 @@ type StoredLocation = {
   radius: number;
 };
 
-const GEOAPIFY_API_KEY =
-  process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || "";
+const GOOGLE_MAPS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
 const DEFAULT_REGION: Region = {
   latitude: 9.082,
@@ -217,7 +217,7 @@ export default function LocationPicker() {
     );
   };
 
-  /* ================= REVERSE GEOCODE ================= */
+  /* ================= REVERSE GEOCODE (Expo) ================= */
 
   const reverseGeocode = async (
     latitude: number,
@@ -272,6 +272,44 @@ export default function LocationPicker() {
       setAddress("Address not available");
     }
   };
+
+  /* ================= REVERSE GEOCODE (Google – optional) ================= 
+   * If you want Google-quality addresses instead of Expo’s geocoder,
+   * replace the reverseGeocode function above with this one and
+   * ensure Geocoding API is enabled for your key.
+   */
+
+  // const reverseGeocode = async (
+  //   latitude: number,
+  //   longitude: number
+  // ) => {
+  //   try {
+  //     const url =
+  //       `https://maps.googleapis.com/maps/api/geocode/json` +
+  //       `?latlng=${latitude},${longitude}` +
+  //       `&key=${GOOGLE_MAPS_API_KEY}`;
+
+  //     const res = await fetch(url);
+  //     const data = await res.json();
+
+  //     if (data.status !== "OK" || !data.results?.length) {
+  //       setAddress("Address not available");
+  //       return;
+  //     }
+
+  //     const formattedAddress = data.results[0].formatted_address;
+
+  //     setAddress(formattedAddress);
+
+  //     setSelectedLocation((previous) => {
+  //       if (!previous) return previous;
+  //       return { ...previous, address: formattedAddress };
+  //     });
+  //   } catch (e) {
+  //     console.log("Google reverse geocode error:", e);
+  //     setAddress("Address not available");
+  //   }
+  // };
 
   /* ================= CURRENT LOCATION ================= */
 
@@ -341,9 +379,9 @@ export default function LocationPicker() {
       return;
     }
 
-    if (!GEOAPIFY_API_KEY) {
+    if (!GOOGLE_MAPS_API_KEY) {
       console.log(
-        "Geoapify API key is missing. Map tiles may not load."
+        "Google Maps API key is missing. Map tiles may not load correctly."
       );
     }
 
@@ -420,15 +458,11 @@ export default function LocationPicker() {
             : "standard"
         }
       >
-        {/* GEOAPIFY MAP TILES */}
+        {/* GOOGLE MAPS TILES */}
 
         <UrlTile
-          urlTemplate={
-            "https://maps.geoapify.com/v1/tile/" +
-            "osm-carto/{z}/{x}/{y}.png" +
-            `?apiKey=${GEOAPIFY_API_KEY}`
-          }
-          maximumZ={19}
+          urlTemplate={`https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`}
+          maximumZ={20}
           flipY={false}
         />
 
@@ -552,7 +586,7 @@ export default function LocationPicker() {
 
       <View style={styles.mapAttribution}>
         <Text style={styles.mapAttributionText}>
-          © OpenStreetMap contributors • Geoapify
+          © Google
         </Text>
       </View>
 

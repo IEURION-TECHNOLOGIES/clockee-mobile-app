@@ -3,21 +3,25 @@ import { usePathname, useRouter, useLocalSearchParams } from "expo-router";
 import { StyleSheet, TouchableOpacity, View, Text } from "react-native";
 import { useProfile } from "@/hooks/useProfile";
 
+
 type dashboardType = "superAdmin" | "owner" | "admin" | "staff";
+
 
 type NavItem = {
   key: string;
   match: string;
-  label: string; // ← Added label
+  label: string;
   icon:
     | { type: "ion"; name: keyof typeof Ionicons.glyphMap }
     | { type: "feather"; name: keyof typeof Feather.glyphMap };
   path: string;
 };
 
+
 type BottomNavProps = {
   dashboardType: dashboardType;
 };
+
 
 export default function BottomNav({ dashboardType }: BottomNavProps) {
   const router = useRouter();
@@ -25,7 +29,6 @@ export default function BottomNav({ dashboardType }: BottomNavProps) {
   const { institutionId: paramInstitutionId, branchId } =
     useLocalSearchParams<{ institutionId?: string; branchId?: string }>();
 
-  // Get institutionId from profile as fallback (more reliable)
   const { data: profile } = useProfile();
   const institutionId = paramInstitutionId || profile?.institutionId;
 
@@ -72,35 +75,35 @@ export default function BottomNav({ dashboardType }: BottomNavProps) {
   ];
 
   const PRIMARY_ADMIN_NAV: NavItem[] = [
-  { 
-    key: "overview", 
-    match: "overview", 
-    label: "Overview",
-    icon: { type: "ion", name: "grid-outline" }, 
-    path: `${base}/overview/Overview` 
-  },
-  { 
-    key: "institution", 
-    match: "institution", 
-    label: "Institution",
-    icon: { type: "ion", name: "business-outline" }, 
-    path: institutionId ? `${base}/institution/${institutionId}` : `${base}/overview/Overview` 
-  },
-  { 
-    key: "subscription", 
-    match: "subscription", 
-    label: "Subscription",
-    icon: { type: "ion", name: "card-outline" }, 
-    path: `${base}/subscription` 
-  },
-  { 
-    key: "profile", 
-    match: "profile", 
-    label: "Profile",
-    icon: { type: "ion", name: "person-outline" }, 
-    path: `${base}/profile` 
-  },
-];
+    { 
+      key: "overview", 
+      match: "overview", 
+      label: "Overview",
+      icon: { type: "ion", name: "grid-outline" }, 
+      path: `${base}/overview/Overview` 
+    },
+    { 
+      key: "institution", 
+      match: "institution", 
+      label: "Institution",
+      icon: { type: "ion", name: "business-outline" }, 
+      path: institutionId ? `${base}/institution/${institutionId}` : `${base}/overview/Overview` 
+    },
+    { 
+      key: "subscription", 
+      match: "subscription", 
+      label: "Subscription",
+      icon: { type: "ion", name: "card-outline" }, 
+      path: `${base}/subscription` 
+    },
+    { 
+      key: "profile", 
+      match: "profile", 
+      label: "Profile",
+      icon: { type: "ion", name: "person-outline" }, 
+      path: `${base}/profile` 
+    },
+  ];
 
   const ADMIN_NAV: NavItem[] = [
     { 
@@ -126,6 +129,7 @@ export default function BottomNav({ dashboardType }: BottomNavProps) {
     },
   ];
 
+  /* ================= UPDATED STAFF NAV ================= */
   const STAFF_NAV: NavItem[] = [
     { 
       key: "overview", 
@@ -134,12 +138,19 @@ export default function BottomNav({ dashboardType }: BottomNavProps) {
       icon: { type: "ion", name: "grid-outline" }, 
       path: `${base}/overview` 
     },
-    { 
+     { 
       key: "clockin", 
       match: "clockIn", 
       label: "Clock In",
       icon: { type: "feather", name: "clock" }, 
       path: `${base}/clockIn/clockIn` 
+    },
+    { 
+      key: "students",  // ← NEW TAB FOR STUDENT ONBOARDING
+      match: "students", 
+      label: "Students",
+      icon: { type: "ion", name: "person-add-outline" }, 
+      path: `${base}/students` 
     },
     { 
       key: "profile", 
@@ -171,7 +182,7 @@ export default function BottomNav({ dashboardType }: BottomNavProps) {
     <View style={styles.bottomNav}>
       {NAV_ITEMS.map((item) => {
         const isActive = pathname.includes(`/${item.match}`);
-        const color = isActive ? "#0ba6f3ff" : "#94A3B8";
+        const color = isActive ? "#0093DD" : "#94A3B8";
 
         return (
           <TouchableOpacity
